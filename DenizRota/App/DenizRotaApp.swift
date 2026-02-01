@@ -7,6 +7,7 @@ struct DenizRotaApp: App {
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
+            Route.self,
             Waypoint.self,
             Trip.self,
             TripPosition.self,
@@ -22,7 +23,7 @@ struct DenizRotaApp: App {
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
         } catch {
-            fatalError("ModelContainer oluşturulamadı: \(error)")
+            fatalError("ModelContainer olusturulamadi: \(error)")
         }
     }()
 

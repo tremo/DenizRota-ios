@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 struct ContentView: View {
     @State private var selectedTab = 0
@@ -41,6 +42,7 @@ struct MapTabView: View {
             MapView()
                 .navigationTitle("DenizRota")
                 .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         }
     }
 }
@@ -48,7 +50,7 @@ struct MapTabView: View {
 struct RoutesTabView: View {
     var body: some View {
         NavigationStack {
-            Text("Kayıtlı Rotalar")
+            RouteListView()
                 .navigationTitle("Rotalar")
         }
     }
@@ -57,7 +59,7 @@ struct RoutesTabView: View {
 struct TripsTabView: View {
     var body: some View {
         NavigationStack {
-            Text("Seyir Geçmişi")
+            TripHistoryView()
                 .navigationTitle("Seyirler")
         }
     }
@@ -75,4 +77,5 @@ struct SettingsTabView: View {
 #Preview {
     ContentView()
         .environmentObject(LocationManager.shared)
+        .modelContainer(for: [Route.self, Trip.self, BoatSettings.self], inMemory: true)
 }
