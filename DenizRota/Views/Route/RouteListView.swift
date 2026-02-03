@@ -5,6 +5,8 @@ struct RouteListView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Route.updatedAt, order: .reverse) private var routes: [Route]
 
+    var onShowOnMap: ((Route) -> Void)?
+
     @State private var selectedRoute: Route?
     @State private var showingDeleteAlert = false
     @State private var routeToDelete: Route?
@@ -21,6 +23,14 @@ struct RouteListView: View {
                             .onTapGesture {
                                 selectedRoute = route
                             }
+                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                Button {
+                                    onShowOnMap?(route)
+                                } label: {
+                                    Label("Haritada Goster", systemImage: "map")
+                                }
+                                .tint(.blue)
+                            }
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) {
                                     routeToDelete = route
@@ -35,7 +45,7 @@ struct RouteListView: View {
             }
         }
         .sheet(item: $selectedRoute) { route in
-            RouteDetailView(route: route)
+            RouteDetailView(route: route, onShowOnMap: onShowOnMap)
         }
         .alert("Rotayi Sil", isPresented: $showingDeleteAlert) {
             Button("Sil", role: .destructive) {
@@ -138,6 +148,7 @@ struct RouteRowView: View {
 struct RouteDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let route: Route
+    var onShowOnMap: ((Route) -> Void)?
 
     var body: some View {
         NavigationStack {
@@ -156,6 +167,17 @@ struct RouteDetailView: View {
                 Section("Waypoint'ler (\(route.waypoints.count))") {
                     ForEach(route.sortedWaypoints) { waypoint in
                         WaypointRowView(waypoint: waypoint)
+                    }
+                }
+
+                if onShowOnMap != nil {
+                    Section {
+                        Button {
+                            dismiss()
+                            onShowOnMap?(route)
+                        } label: {
+                            Label("Haritada Goster", systemImage: "map")
+                        }
                     }
                 }
             }

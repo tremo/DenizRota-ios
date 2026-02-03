@@ -3,16 +3,20 @@ import SwiftData
 
 struct ContentView: View {
     @State private var selectedTab = 0
+    @State private var routeToShowOnMap: Route?
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            MapTabView()
+            MapTabView(routeToShow: $routeToShowOnMap)
                 .tabItem {
                     Label("Harita", systemImage: "map")
                 }
                 .tag(0)
 
-            RoutesTabView()
+            RoutesTabView(onShowOnMap: { route in
+                routeToShowOnMap = route
+                selectedTab = 0
+            })
                 .tabItem {
                     Label("Rotalar", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
                 }
@@ -37,9 +41,11 @@ struct ContentView: View {
 // MARK: - Tab Views
 
 struct MapTabView: View {
+    @Binding var routeToShow: Route?
+
     var body: some View {
         NavigationStack {
-            MapView()
+            MapView(routeToShow: $routeToShow)
                 .navigationTitle("DenizRota")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
@@ -48,9 +54,11 @@ struct MapTabView: View {
 }
 
 struct RoutesTabView: View {
+    var onShowOnMap: (Route) -> Void
+
     var body: some View {
         NavigationStack {
-            RouteListView()
+            RouteListView(onShowOnMap: onShowOnMap)
                 .navigationTitle("Rotalar")
         }
     }

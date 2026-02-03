@@ -8,6 +8,9 @@ struct MapView: View {
     @EnvironmentObject var locationManager: LocationManager
     @Query(sort: \Route.updatedAt, order: .reverse) private var routes: [Route]
 
+    // Dışarıdan gelen rota (kayıtlı rotalardan seçilen)
+    @Binding var routeToShow: Route?
+
     @State private var cameraPosition: MapCameraPosition = .region(
         MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 38.5, longitude: 27.0), // Ege
@@ -90,19 +93,25 @@ struct MapView: View {
             // UI Overlay
             VStack {
                 // Ust bilgi paneli
-                if isRouteMode, let route = activeRoute {
-                    RouteInfoBar(route: route)
+                HStack(alignment: .top) {
+                    // Hiz paneli (seyir aktifken) - Sol ust
+                    if locationManager.isTracking {
+                        SpeedPanelView(speed: locationManager.currentSpeed)
+                            .padding(.leading, 16)
+                            .padding(.top, 8)
+                    }
+
+                    Spacer()
+                }
+
+                // Rota bilgi cubugu
+                if let route = activeRoute {
+                    RouteInfoBar(route: route, isSaved: route.name != "Yeni Rota")
                         .padding(.horizontal)
                         .padding(.top, 8)
                 }
 
                 Spacer()
-
-                // Hiz paneli (seyir aktifken)
-                if locationManager.isTracking {
-                    SpeedPanelView(speed: locationManager.currentSpeed)
-                        .padding(.bottom, 20)
-                }
 
                 // Alt butonlar
                 HStack(spacing: 16) {
@@ -119,8 +128,8 @@ struct MapView: View {
                             .shadow(radius: 4)
                     }
 
-                    // Hava durumu yukle
-                    if isRouteMode, let route = activeRoute, !route.waypoints.isEmpty {
+                    // Hava durumu yukle (aktif rota varsa)
+                    if let route = activeRoute, !route.waypoints.isEmpty {
                         Button {
                             Task { await loadWeatherForRoute() }
                         } label: {
@@ -137,8 +146,8 @@ struct MapView: View {
                         .disabled(isLoadingWeather)
                     }
 
-                    // Rota kaydet
-                    if isRouteMode, let route = activeRoute, !route.waypoints.isEmpty {
+                    // Rota kaydet (sadece kaydedilmemis rotalar icin)
+                    if let route = activeRoute, !route.waypoints.isEmpty, route.name == "Yeni Rota" {
                         Button {
                             showingSaveRouteAlert = true
                         } label: {
@@ -152,7 +161,7 @@ struct MapView: View {
                         }
                     }
 
-                    // Son waypoint'i sil
+                    // Son waypoint'i sil (rota modunda)
                     if isRouteMode, let route = activeRoute, !route.waypoints.isEmpty {
                         Button {
                             undoLastWaypoint()
@@ -162,6 +171,21 @@ struct MapView: View {
                                 .padding(12)
                                 .background(.white)
                                 .foregroundStyle(.red)
+                                .clipShape(Circle())
+                                .shadow(radius: 4)
+                        }
+                    }
+
+                    // Rotayi temizle/kapat
+                    if activeRoute != nil && !isRouteMode {
+                        Button {
+                            clearActiveRoute()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.title2)
+                                .padding(12)
+                                .background(.white)
+                                .foregroundStyle(.gray)
                                 .clipShape(Circle())
                                 .shadow(radius: 4)
                         }
@@ -240,6 +264,29 @@ struct MapView: View {
             // Ilk yuklemede hava durumunu kontrol et
             autoRefreshWeather()
         }
+        // Kayitli rotadan secilen rotayi haritada goster
+        .onChange(of: routeToShow) { oldValue, newValue in
+            if let route = newValue {
+                showRouteOnMap(route)
+            }
+        }
+    }
+
+    /// Secilen rotayi haritada goster ve kamerayi ayarla
+    private func showRouteOnMap(_ route: Route) {
+        activeRoute = route
+        isRouteMode = false
+
+        // Kamerayi rotaya odakla
+        if let firstWaypoint = route.sortedWaypoints.first {
+            let region = MKCoordinateRegion(
+                center: firstWaypoint.coordinate,
+                span: MKCoordinateSpan(latitudeDelta: 0.5, longitudeDelta: 0.5)
+            )
+            withAnimation {
+                cameraPosition = .region(region)
+            }
+        }
     }
 
     // MARK: - Route Mode
@@ -255,12 +302,25 @@ struct MapView: View {
         }
 
         if !isRouteMode {
-            // Rota modu kapatildiginda bos rotayi sil
+            // Rota modu kapatildiginda bos rotayi sil, ama waypoint varsa rotayi koru
             if let route = activeRoute, route.waypoints.isEmpty {
                 modelContext.delete(route)
+                activeRoute = nil
             }
-            activeRoute = nil
+            // Waypoint'li rota haritada kalmaya devam eder
         }
+    }
+
+    /// Aktif rotayi haritadan kaldir
+    private func clearActiveRoute() {
+        if let route = activeRoute {
+            // Kaydedilmemis rotayi sil
+            if route.name == "Yeni Rota" {
+                modelContext.delete(route)
+            }
+        }
+        activeRoute = nil
+        routeToShow = nil
     }
 
     // MARK: - Waypoint Management
@@ -407,9 +467,9 @@ struct MapView: View {
         route.updatedAt = Date()
         newRouteName = ""
 
-        // Rota modunu kapat ama rotayi koru
+        // Rota modunu kapat, rota haritada kalmaya devam etsin
         isRouteMode = false
-        activeRoute = nil
+        // activeRoute korunuyor, haritada goruntuleniyor
     }
 }
 
@@ -437,9 +497,17 @@ struct UserLocationMarker: View {
 
 struct RouteInfoBar: View {
     let route: Route
+    var isSaved: Bool = false
 
     var body: some View {
-        HStack(spacing: 20) {
+        HStack(spacing: 16) {
+            // Rota adi (kayitliysa)
+            if isSaved {
+                Text(route.name)
+                    .font(.subheadline.bold())
+                    .lineLimit(1)
+            }
+
             // Nokta sayisi
             Label("\(route.waypoints.count)", systemImage: "mappin")
                 .font(.subheadline.bold())
