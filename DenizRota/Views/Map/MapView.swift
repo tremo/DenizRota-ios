@@ -21,6 +21,10 @@ struct MapView: View {
     @State private var showingSaveRouteAlert = false
     @State private var newRouteName = ""
 
+    // Seyir zamani secici
+    @State private var showingDeparturePicker = false
+    @State private var scheduledDepartureDate = Date()
+
     // Hava durumu
     @State private var isLoadingWeather = false
 
@@ -161,7 +165,8 @@ struct MapView: View {
                         if locationManager.isTracking {
                             stopTrip()
                         } else {
-                            startTrip()
+                            scheduledDepartureDate = Date()
+                            showingDeparturePicker = true
                         }
                     } label: {
                         Image(systemName: locationManager.isTracking ? "stop.fill" : "play.fill")
@@ -205,6 +210,18 @@ struct MapView: View {
             }
         } message: {
             Text("Rotaniz icin bir isim girin")
+        }
+        .sheet(isPresented: $showingDeparturePicker) {
+            DeparturePickerView(
+                selectedDate: $scheduledDepartureDate,
+                onStartNow: {
+                    startTrip(at: Date())
+                },
+                onStartScheduled: { date in
+                    startTrip(at: date)
+                }
+            )
+            .presentationDetents([.large])
         }
     }
 
@@ -303,10 +320,17 @@ struct MapView: View {
 
     // MARK: - Trip
 
-    private func startTrip() {
+    private func startTrip(at departureDate: Date) {
         guard let route = activeRoute else { return }
 
         let waypoints = route.sortedWaypoints
+
+        // Gelecek bir tarih secildiyse bilgi mesaji goster
+        if departureDate > Date().addingMinutes(1) {
+            print("Seyir \(departureDate.dateTimeStringTR) icin planlandi")
+            // Not: Gelecek surumde zamanlama sistemi eklenebilir
+        }
+
         locationManager.startTracking(waypoints: waypoints)
     }
 

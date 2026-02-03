@@ -39,7 +39,8 @@ DenizRota/
 │   │   └── RouteListView.swift  # Kayıtlı rotalar listesi
 │   ├── Trip/
 │   │   ├── TripHistoryView.swift    # Seyir geçmişi
-│   │   └── TripTrackingView.swift   # Aktif seyir takibi
+│   │   ├── TripTrackingView.swift   # Aktif seyir takibi
+│   │   └── DeparturePickerView.swift # Seyir zamanı seçici
 │   └── Settings/
 │       └── SettingsView.swift   # Ayarlar
 │
@@ -123,7 +124,7 @@ Params: latitude, longitude, hourly=wave_height,wave_direction,wave_period
 - [ ] Web app ile ortak data
 
 ### UI İyileştirmeleri
-- [ ] Seyir tarihi/saati seçici (departure picker)
+- [x] Seyir tarihi/saati seçici (departure picker)
 - [ ] Otomatik hava durumu güncelleme (15 dk)
 - [ ] Kayıtlı rotalar görünümünü geliştir
 - [ ] Dark mode desteği
