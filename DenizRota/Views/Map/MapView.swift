@@ -1,6 +1,7 @@
 import SwiftUI
 import MapKit
 import SwiftData
+import Combine
 
 struct MapView: View {
     @Environment(\.modelContext) private var modelContext
@@ -27,6 +28,14 @@ struct MapView: View {
 
     // Hava durumu
     @State private var isLoadingWeather = false
+    @State private var lastWeatherUpdate: Date?
+
+    // Otomatik hava durumu guncelleme timer'i (15 dakika)
+    private let weatherRefreshTimer = Timer.publish(
+        every: AppConstants.weatherAutoRefreshInterval,
+        on: .main,
+        in: .common
+    ).autoconnect()
 
     var body: some View {
         ZStack {
@@ -223,6 +232,14 @@ struct MapView: View {
             )
             .presentationDetents([.large])
         }
+        // Otomatik hava durumu guncelleme (15 dakikada bir)
+        .onReceive(weatherRefreshTimer) { _ in
+            autoRefreshWeather()
+        }
+        .onAppear {
+            // Ilk yuklemede hava durumunu kontrol et
+            autoRefreshWeather()
+        }
     }
 
     // MARK: - Route Mode
@@ -282,6 +299,27 @@ struct MapView: View {
 
     // MARK: - Weather
 
+    /// Otomatik hava durumu guncelleme
+    /// Aktif rota varsa ve waypoint'ler varsa hava durumunu gunceller
+    private func autoRefreshWeather() {
+        // Sadece rota modu aktifken ve waypoint varsa guncelle
+        guard isRouteMode,
+              let route = activeRoute,
+              !route.waypoints.isEmpty,
+              !isLoadingWeather else { return }
+
+        // Son guncellemeden bu yana yeterli sure gectiyse guncelle
+        if let lastUpdate = lastWeatherUpdate {
+            let timeSinceLastUpdate = Date().timeIntervalSince(lastUpdate)
+            // En az 5 dakika gecmis olmali (gereksiz cagrilari onle)
+            guard timeSinceLastUpdate >= 300 else { return }
+        }
+
+        Task {
+            await loadWeatherForRoute()
+        }
+    }
+
     private func loadWeatherForRoute() async {
         guard let route = activeRoute else { return }
 
@@ -316,6 +354,7 @@ struct MapView: View {
         }
 
         isLoadingWeather = false
+        lastWeatherUpdate = Date()
     }
 
     // MARK: - Trip
