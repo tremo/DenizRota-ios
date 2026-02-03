@@ -125,7 +125,7 @@ Params: latitude, longitude, hourly=wave_height,wave_direction,wave_period
 
 ### UI İyileştirmeleri
 - [x] Seyir tarihi/saati seçici (departure picker)
-- [ ] Otomatik hava durumu güncelleme (15 dk)
+- [x] Otomatik hava durumu güncelleme (15 dk)
 - [ ] Kayıtlı rotalar görünümünü geliştir
 - [ ] Dark mode desteği
 
