@@ -68,64 +68,33 @@ final class FetchCalculator {
         return 1.0 // Açık deniz
     }
 
-    /// Basitleştirilmiş kara kontrolü - Türkiye kıyıları için
+    /// Kara kontrolü - SeaAreas ve CoastlineData kullanarak
     private func isPointOnLand(lat: Double, lng: Double) -> Bool {
-        // Türkiye ana kara sınırları (yaklaşık)
+        // SeaAreas.isInSea() ile deniz alanı kontrolü (kod tekrarını önler)
+        if SeaAreas.isInSea(lat: lat, lng: lng) {
+            // Deniz alanı içinde ama kıyı şeridinde olabilir
+            return isNearCoastline(lat: lat, lng: lng)
+        }
+
+        // Deniz alanı dışında - Türkiye sınırları içindeyse kara
         let turkeyBounds = (
-            minLat: 35.8,
-            maxLat: 42.1,
-            minLng: 25.6,
-            maxLng: 44.8
+            minLat: 35.8, maxLat: 42.1,
+            minLng: 25.6, maxLng: 44.8
         )
 
-        // Türkiye sınırları dışındaysa deniz say
         guard lat >= turkeyBounds.minLat && lat <= turkeyBounds.maxLat &&
               lng >= turkeyBounds.minLng && lng <= turkeyBounds.maxLng else {
-            return false
+            return false // Türkiye dışı = açık deniz
         }
 
-        // Deniz alanları (Türkiye etrafındaki denizler)
-        let seaAreas: [(name: String, bounds: (minLat: Double, maxLat: Double, minLng: Double, maxLng: Double))] = [
-            // Ege Denizi
-            ("Ege", (minLat: 35.5, maxLat: 40.5, minLng: 23.0, maxLng: 27.5)),
-            // Akdeniz
-            ("Akdeniz", (minLat: 35.5, maxLat: 37.0, minLng: 27.5, maxLng: 36.5)),
-            // Marmara Denizi
-            ("Marmara", (minLat: 40.3, maxLat: 41.1, minLng: 26.5, maxLng: 29.9)),
-            // Karadeniz (güney kıyısı)
-            ("Karadeniz", (minLat: 41.0, maxLat: 42.5, minLng: 27.5, maxLng: 42.0))
-        ]
-
-        // Deniz alanı içindeyse kara değil
-        for area in seaAreas {
-            let b = area.bounds
-            if lat >= b.minLat && lat <= b.maxLat && lng >= b.minLng && lng <= b.maxLng {
-                // Ama kıyı şeridinde olabilir - daha detaylı kontrol gerekir
-                // Basit yaklaşım: kıyıya çok yakınsa (0.05°) kara say
-                return isNearCoastline(lat: lat, lng: lng)
-            }
-        }
-
-        // Deniz alanı dışında ve Türkiye içindeyse kara
         return true
     }
 
-    /// Kıyı şeridine yakınlık kontrolü
+    /// Kıyı şeridine yakınlık kontrolü - CoastlineData'daki detaylı noktaları kullanır
     private func isNearCoastline(lat: Double, lng: Double) -> Bool {
-        // Ana kıyı noktaları (basitleştirilmiş)
-        let coastlinePoints: [(lat: Double, lng: Double)] = [
-            // Kuzey Ege
-            (40.0, 26.0), (39.5, 26.5), (39.0, 26.8), (38.5, 26.5),
-            // Güney Ege
-            (38.0, 26.8), (37.5, 27.0), (37.0, 27.4), (36.7, 28.0),
-            // Akdeniz
-            (36.5, 29.0), (36.2, 30.0), (36.5, 31.0), (36.8, 32.0),
-            (36.5, 33.0), (36.2, 34.0), (36.5, 35.0), (36.8, 36.0)
-        ]
+        let threshold = 0.015 // ~1.5 km
 
-        let threshold = 0.1 // ~11 km
-
-        for point in coastlinePoints {
+        for point in CoastlineData.allPoints {
             let distance = sqrt(pow(lat - point.lat, 2) + pow(lng - point.lng, 2))
             if distance < threshold {
                 return true
