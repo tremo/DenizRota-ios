@@ -98,6 +98,7 @@ struct NauticalMapView: UIViewRepresentable {
             action: #selector(Coordinator.handleTap(_:))
         )
         tapGesture.numberOfTapsRequired = 1
+        tapGesture.delegate = context.coordinator
         // Don't interfere with double-tap zoom
         for gesture in mapView.gestureRecognizers ?? [] {
             if let doubleTap = gesture as? UITapGestureRecognizer,
@@ -297,138 +298,42 @@ struct NauticalMapView: UIViewRepresentable {
 
     // MARK: - Coordinator
 
-    class Coordinator: NSObject, MKMapViewDelegate {
+    class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         var parent: NauticalMapView?
         var lastRegionCenter = CLLocationCoordinate2D(latitude: 0, longitude: 0)
         var lastRegionSpan = MKCoordinateSpan(latitudeDelta: 0, longitudeDelta: 0)
         var isProgrammaticRegionChange = false
 
-        // Callout management
-        private var calloutContainer: UIView?
-        private var calloutHosting: UIHostingController<AnyView>?
-        private var selectedWaypointAnnotation: WaypointAnnotation?
+        // MARK: - UIGestureRecognizerDelegate
 
-        var isShowingCallout: Bool { calloutContainer != nil }
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let parent = parent, parent.isRouteMode,
+                  let mapView = gestureRecognizer.view as? MKMapView else {
+                // Not in route mode - let MKMapView handle taps (annotation selection etc.)
+                return false
+            }
 
-        // MARK: - Callout
+            let point = gestureRecognizer.location(in: mapView)
 
-        func showCallout(for annotation: WaypointAnnotation, in mapView: MKMapView) {
-            removeCallout(animated: false)
-            selectedWaypointAnnotation = annotation
-
-            let waypoint = annotation.waypoint
-            let calloutView = WaypointCalloutContent(
-                waypoint: waypoint,
-                onClose: { [weak self] in
-                    self?.dismissCallout(in: mapView)
-                },
-                onDelete: { [weak self] in
-                    self?.removeCallout(animated: false)
-                    self?.parent?.onDeleteWaypoint?(waypoint)
+            // Don't recognize if tap is on an existing annotation
+            // Let MKMapView handle it so didSelect fires
+            for annotation in mapView.annotations {
+                if let view = mapView.view(for: annotation) {
+                    let pointInView = view.convert(point, from: mapView)
+                    if view.point(inside: pointInView, with: nil) {
+                        return false
+                    }
                 }
-            )
-
-            let hosting = UIHostingController(rootView: AnyView(calloutView))
-            hosting.view.backgroundColor = .clear
-            calloutHosting = hosting
-
-            let fittingSize = hosting.sizeThatFits(in: CGSize(width: 220, height: 400))
-
-            let container = UIView(frame: CGRect(origin: .zero, size: fittingSize))
-            container.backgroundColor = .clear
-            container.addSubview(hosting.view)
-            hosting.view.frame = container.bounds
-
-            mapView.addSubview(container)
-            calloutContainer = container
-
-            updateCalloutPosition(in: mapView)
-
-            // Animate in
-            container.alpha = 0
-            container.transform = CGAffineTransform(scaleX: 0.85, y: 0.85).translatedBy(x: 0, y: 10)
-            UIView.animate(withDuration: 0.2, delay: 0, options: .curveEaseOut) {
-                container.alpha = 1
-                container.transform = .identity
-            }
-        }
-
-        func removeCallout(animated: Bool = true) {
-            guard let container = calloutContainer else { return }
-
-            if animated {
-                UIView.animate(withDuration: 0.15, delay: 0, options: .curveEaseIn) {
-                    container.alpha = 0
-                    container.transform = CGAffineTransform(scaleX: 0.9, y: 0.9)
-                } completion: { _ in
-                    container.removeFromSuperview()
-                }
-            } else {
-                container.removeFromSuperview()
             }
 
-            calloutContainer = nil
-            calloutHosting = nil
-            selectedWaypointAnnotation = nil
+            return true
         }
-
-        func dismissCallout(in mapView: MKMapView) {
-            removeCallout()
-            for annotation in mapView.selectedAnnotations {
-                mapView.deselectAnnotation(annotation, animated: false)
-            }
-        }
-
-        func updateCalloutPosition(in mapView: MKMapView) {
-            guard let annotation = selectedWaypointAnnotation,
-                  let container = calloutContainer else { return }
-
-            let point = mapView.convert(annotation.coordinate, toPointTo: mapView)
-            let size = container.bounds.size
-
-            // Position above the pin (pin is 32x32 centered)
-            var x = point.x - size.width / 2
-            let y = point.y - size.height - 16
-
-            // Keep within map bounds
-            let margin: CGFloat = 8
-            x = max(margin, min(x, mapView.bounds.width - size.width - margin))
-
-            container.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
-        }
-
-        // MARK: - Tap Handling
 
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard let parent = parent,
                   let mapView = gesture.view as? MKMapView else { return }
 
-            let point = gesture.location(in: mapView)
-
-            // Don't process if tap hit the callout
-            if let callout = calloutContainer, callout.frame.contains(point) {
-                return
-            }
-
-            // Don't process if tap hit an existing annotation
-            for annotation in mapView.annotations {
-                if let view = mapView.view(for: annotation) {
-                    if view.frame.contains(point) {
-                        return
-                    }
-                }
-            }
-
-            // If callout was showing, dismiss it without adding waypoint
-            if isShowingCallout {
-                dismissCallout(in: mapView)
-                return
-            }
-
-            // Only add waypoint in route mode
-            guard parent.isRouteMode else { return }
-
-            let coordinate = mapView.convert(point, toCoordinateFrom: mapView)
+            let coordinate = mapView.convert(gesture.location(in: mapView), toCoordinateFrom: mapView)
             parent.onTapCoordinate?(coordinate)
         }
 
