@@ -11,12 +11,14 @@ struct MapView: View {
     // Dışarıdan gelen rota (kayıtlı rotalardan seçilen)
     @Binding var routeToShow: Route?
 
-    @State private var cameraPosition: MapCameraPosition = .region(
-        MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 38.5, longitude: 27.0), // Ege
-            span: MKCoordinateSpan(latitudeDelta: 2, longitudeDelta: 2)
-        )
+    @State private var mapRegion = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 38.5, longitude: 27.0), // Ege
+        span: MKCoordinateSpan(latitudeDelta: 2, longitudeDelta: 2)
     )
+
+    // Harita tipi
+    @State private var mapStyle: MapStyleOption = .hybrid
+    @State private var showOpenSeaMap = true
 
     @State private var isRouteMode = false
     @State private var activeRoute: Route?
@@ -43,52 +45,22 @@ struct MapView: View {
     var body: some View {
         ZStack {
             // Harita
-            MapReader { proxy in
-                Map(position: $cameraPosition, interactionModes: .all) {
-                    // Kullanici konumu
-                    if let location = locationManager.currentLocation {
-                        Annotation("Konum", coordinate: location.coordinate) {
-                            UserLocationMarker()
-                        }
-                    }
-
-                    // Waypoint'ler
-                    if let route = activeRoute {
-                        ForEach(route.sortedWaypoints) { waypoint in
-                            Annotation(waypoint.name ?? "", coordinate: waypoint.coordinate) {
-                                WaypointMarkerView(
-                                    number: waypoint.orderIndex + 1,
-                                    riskLevel: waypoint.riskLevel,
-                                    isLoading: waypoint.isLoading
-                                )
-                                .onTapGesture {
-                                    selectedWaypoint = waypoint
-                                    showingWaypointSheet = true
-                                }
-                            }
-                        }
-
-                        // Rota cizgisi
-                        if route.waypoints.count > 1 {
-                            MapPolyline(coordinates: route.sortedWaypoints.map(\.coordinate))
-                                .stroke(.blue, lineWidth: 3)
-                        }
-                    }
+            NauticalMapView(
+                region: mapRegion,
+                mapStyle: mapStyle,
+                showOpenSeaMap: showOpenSeaMap,
+                userLocation: locationManager.currentLocation,
+                activeRoute: activeRoute,
+                isRouteMode: isRouteMode,
+                onTapCoordinate: { coordinate in
+                    addWaypoint(at: coordinate)
+                },
+                onWaypointTapped: { waypoint in
+                    selectedWaypoint = waypoint
+                    showingWaypointSheet = true
                 }
-                .mapStyle(.standard)
-                .mapControls {
-                    MapCompass()
-                    MapScaleView()
-                    MapUserLocationButton()
-                }
-                .onTapGesture { screenCoord in
-                    if isRouteMode {
-                        if let coordinate = proxy.convert(screenCoord, from: .local) {
-                            addWaypoint(at: coordinate)
-                        }
-                    }
-                }
-            }
+            )
+            .ignoresSafeArea(edges: .top)
 
             // UI Overlay
             VStack {
@@ -102,6 +74,32 @@ struct MapView: View {
                     }
 
                     Spacer()
+
+                    // Harita tipi secici - Sag ust
+                    Menu {
+                        ForEach(MapStyleOption.allCases) { style in
+                            Button {
+                                mapStyle = style
+                            } label: {
+                                Label(style.rawValue, systemImage: style.icon)
+                            }
+                        }
+
+                        Divider()
+
+                        Toggle(isOn: $showOpenSeaMap) {
+                            Label("Deniz Haritasi", systemImage: "water.waves")
+                        }
+                    } label: {
+                        Image(systemName: "map.fill")
+                            .font(.title3)
+                            .padding(10)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Circle())
+                            .shadow(radius: 2)
+                    }
+                    .padding(.trailing, 16)
+                    .padding(.top, 8)
                 }
 
                 // Rota bilgi cubugu
@@ -279,13 +277,10 @@ struct MapView: View {
 
         // Kamerayi rotaya odakla
         if let firstWaypoint = route.sortedWaypoints.first {
-            let region = MKCoordinateRegion(
+            mapRegion = MKCoordinateRegion(
                 center: firstWaypoint.coordinate,
                 span: MKCoordinateSpan(latitudeDelta: 0.5, longitudeDelta: 0.5)
             )
-            withAnimation {
-                cameraPosition = .region(region)
-            }
         }
     }
 
@@ -669,7 +664,7 @@ struct PermissionOverlay: View {
 }
 
 #Preview {
-    MapView()
+    MapView(routeToShow: .constant(nil))
         .environmentObject(LocationManager.shared)
         .modelContainer(for: [Route.self, Trip.self, BoatSettings.self], inMemory: true)
 }
