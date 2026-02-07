@@ -64,7 +64,7 @@ class TripManager: ObservableObject {
         guard !isActive else { return }
 
         // Reset state
-        currentTrip = Trip()
+        currentTrip = Trip(startDate: Date())
         positions = []
         maxSpeed = 0
         totalDistance = 0
@@ -95,7 +95,7 @@ class TripManager: ObservableObject {
 
         // Stop tracking
         isActive = false
-        locationManager.stopTracking()
+        _ = locationManager.stopTracking()
         timer?.invalidate()
         timer = nil
 
@@ -108,7 +108,7 @@ class TripManager: ObservableObject {
 
         // Add positions to trip
         for position in positions {
-            trip.addPosition(position)
+            trip.positions.append(position)
         }
 
         let finishedTrip = trip
@@ -121,7 +121,7 @@ class TripManager: ObservableObject {
     func pauseTrip() {
         timer?.invalidate()
         timer = nil
-        locationManager.stopTracking()
+        _ = locationManager.stopTracking()
     }
 
     func resumeTrip() {
@@ -138,13 +138,7 @@ class TripManager: ObservableObject {
 
     private func handleLocationUpdate(_ location: CLLocation) {
         // Create position record
-        let position = TripPosition(
-            latitude: location.coordinate.latitude,
-            longitude: location.coordinate.longitude,
-            timestamp: Date(),
-            speed: location.speedKmh,
-            accuracy: location.horizontalAccuracy
-        )
+        let position = TripPosition(location: location)
         positions.append(position)
 
         // Calculate distance
@@ -178,12 +172,10 @@ class TripManager: ObservableObject {
                 notifiedWaypoints.insert(targetWaypoint.id)
 
                 // Send arrival notification
-                Task {
-                    await notificationManager.sendArrivalNotification(
-                        waypointName: targetWaypoint.name ?? "Nokta \(currentWaypointIndex + 1)",
-                        distance: distance
-                    )
-                }
+                notificationManager.sendArrivalNotification(
+                    waypointName: targetWaypoint.name ?? "Nokta \(currentWaypointIndex + 1)",
+                    distance: distance
+                )
 
                 // Move to next waypoint
                 if currentWaypointIndex < targetWaypoints.count - 1 {
