@@ -124,7 +124,7 @@ class FirebaseManager: ObservableObject {
 
     /// Ayarları kaydet
     func saveSettings(_ settings: BoatSettings) async throws {
-        guard isLoggedIn, let userId = currentUser?.id else {
+        guard isLoggedIn, currentUser != nil else {
             throw FirebaseError.notLoggedIn
         }
 
@@ -137,7 +137,7 @@ class FirebaseManager: ObservableObject {
 
     /// Ayarları yükle
     func loadSettings() async throws -> BoatSettings? {
-        guard isLoggedIn, let userId = currentUser?.id else {
+        guard isLoggedIn, currentUser != nil else {
             throw FirebaseError.notLoggedIn
         }
 
@@ -154,7 +154,7 @@ class FirebaseManager: ObservableObject {
 
     /// Rotayı kaydet
     func saveRoute(_ route: Route) async throws {
-        guard isLoggedIn, let userId = currentUser?.id else {
+        guard isLoggedIn, currentUser != nil else {
             throw FirebaseError.notLoggedIn
         }
 
@@ -167,7 +167,7 @@ class FirebaseManager: ObservableObject {
 
     /// Rotaları yükle
     func loadRoutes() async throws -> [Route] {
-        guard isLoggedIn, let userId = currentUser?.id else {
+        guard isLoggedIn, currentUser != nil else {
             throw FirebaseError.notLoggedIn
         }
 
@@ -180,7 +180,7 @@ class FirebaseManager: ObservableObject {
 
     /// Rotayı sil
     func deleteRoute(_ routeId: UUID) async throws {
-        guard isLoggedIn, let userId = currentUser?.id else {
+        guard isLoggedIn, currentUser != nil else {
             throw FirebaseError.notLoggedIn
         }
 
@@ -194,7 +194,7 @@ class FirebaseManager: ObservableObject {
 
     /// Seyiri kaydet
     func saveTrip(_ trip: Trip) async throws {
-        guard isLoggedIn, let userId = currentUser?.id else {
+        guard isLoggedIn, currentUser != nil else {
             throw FirebaseError.notLoggedIn
         }
 
@@ -207,7 +207,7 @@ class FirebaseManager: ObservableObject {
 
     /// Seyirleri yükle
     func loadTrips() async throws -> [Trip] {
-        guard isLoggedIn, let userId = currentUser?.id else {
+        guard isLoggedIn, currentUser != nil else {
             throw FirebaseError.notLoggedIn
         }
 
@@ -222,7 +222,7 @@ class FirebaseManager: ObservableObject {
 
     /// Seyiri sil
     func deleteTrip(_ tripId: UUID) async throws {
-        guard isLoggedIn, let userId = currentUser?.id else {
+        guard isLoggedIn, currentUser != nil else {
             throw FirebaseError.notLoggedIn
         }
 
@@ -304,35 +304,6 @@ enum FirebaseError: LocalizedError {
 }
 
 // MARK: - Firestore Dictionary Extensions
-extension BoatSettings {
-    var asDictionary: [String: Any] {
-        [
-            "boatName": boatName,
-            "boatType": boatType.rawValue,
-            "avgSpeed": avgSpeed,
-            "fuelRate": fuelRate,
-            "tankCapacity": tankCapacity,
-            "fuelPrice": fuelPrice
-        ]
-    }
-
-    convenience init?(from data: [String: Any]) {
-        guard let boatName = data["boatName"] as? String,
-              let boatTypeRaw = data["boatType"] as? String,
-              let boatType = BoatType(rawValue: boatTypeRaw) else {
-            return nil
-        }
-
-        self.init()
-        self.boatName = boatName
-        self.boatType = boatType
-        self.avgSpeed = data["avgSpeed"] as? Double ?? AppConstants.defaultBoatSpeed
-        self.fuelRate = data["fuelRate"] as? Double ?? AppConstants.defaultFuelRate
-        self.tankCapacity = data["tankCapacity"] as? Double ?? AppConstants.defaultTankCapacity
-        self.fuelPrice = data["fuelPrice"] as? Double ?? AppConstants.defaultFuelPrice
-    }
-}
-
 extension Trip {
     var asDictionary: [String: Any] {
         var dict: [String: Any] = [
@@ -351,7 +322,7 @@ extension Trip {
         }
 
         // Positions (simplified for storage)
-        let positionData = (positions ?? []).map { pos in
+        let positionData = positions.map { pos in
             [
                 "lat": pos.latitude,
                 "lng": pos.longitude,
