@@ -71,7 +71,7 @@ struct NauticalMapView: UIViewRepresentable {
     var isRouteMode: Bool
 
     var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
-    var onWaypointTapped: ((Waypoint) -> Void)?
+    var onDeleteWaypoint: ((Waypoint) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -303,13 +303,114 @@ struct NauticalMapView: UIViewRepresentable {
         var lastRegionSpan = MKCoordinateSpan(latitudeDelta: 0, longitudeDelta: 0)
         var isProgrammaticRegionChange = false
 
+        // Callout management
+        private var calloutContainer: UIView?
+        private var calloutHosting: UIHostingController<AnyView>?
+        private var selectedWaypointAnnotation: WaypointAnnotation?
+
+        var isShowingCallout: Bool { calloutContainer != nil }
+
+        // MARK: - Callout
+
+        func showCallout(for annotation: WaypointAnnotation, in mapView: MKMapView) {
+            removeCallout(animated: false)
+            selectedWaypointAnnotation = annotation
+
+            let waypoint = annotation.waypoint
+            let calloutView = WaypointCalloutContent(
+                waypoint: waypoint,
+                onClose: { [weak self] in
+                    self?.dismissCallout(in: mapView)
+                },
+                onDelete: { [weak self] in
+                    self?.removeCallout(animated: false)
+                    self?.parent?.onDeleteWaypoint?(waypoint)
+                }
+            )
+
+            let hosting = UIHostingController(rootView: AnyView(calloutView))
+            hosting.view.backgroundColor = .clear
+            calloutHosting = hosting
+
+            let fittingSize = hosting.sizeThatFits(in: CGSize(width: 220, height: 400))
+
+            let container = UIView(frame: CGRect(origin: .zero, size: fittingSize))
+            container.backgroundColor = .clear
+            container.addSubview(hosting.view)
+            hosting.view.frame = container.bounds
+
+            mapView.addSubview(container)
+            calloutContainer = container
+
+            updateCalloutPosition(in: mapView)
+
+            // Animate in
+            container.alpha = 0
+            container.transform = CGAffineTransform(scaleX: 0.85, y: 0.85).translatedBy(x: 0, y: 10)
+            UIView.animate(withDuration: 0.2, delay: 0, options: .curveEaseOut) {
+                container.alpha = 1
+                container.transform = .identity
+            }
+        }
+
+        func removeCallout(animated: Bool = true) {
+            guard let container = calloutContainer else { return }
+
+            if animated {
+                UIView.animate(withDuration: 0.15, delay: 0, options: .curveEaseIn) {
+                    container.alpha = 0
+                    container.transform = CGAffineTransform(scaleX: 0.9, y: 0.9)
+                } completion: { _ in
+                    container.removeFromSuperview()
+                }
+            } else {
+                container.removeFromSuperview()
+            }
+
+            calloutContainer = nil
+            calloutHosting = nil
+            selectedWaypointAnnotation = nil
+        }
+
+        func dismissCallout(in mapView: MKMapView) {
+            removeCallout()
+            for annotation in mapView.selectedAnnotations {
+                mapView.deselectAnnotation(annotation, animated: false)
+            }
+        }
+
+        func updateCalloutPosition(in mapView: MKMapView) {
+            guard let annotation = selectedWaypointAnnotation,
+                  let container = calloutContainer else { return }
+
+            let point = mapView.convert(annotation.coordinate, toPointTo: mapView)
+            let size = container.bounds.size
+
+            // Position above the pin (pin is 32x32 centered)
+            var x = point.x - size.width / 2
+            let y = point.y - size.height - 16
+
+            // Keep within map bounds
+            let margin: CGFloat = 8
+            x = max(margin, min(x, mapView.bounds.width - size.width - margin))
+
+            container.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
+        }
+
+        // MARK: - Tap Handling
+
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
-            guard let parent = parent, parent.isRouteMode,
+            guard let parent = parent,
                   let mapView = gesture.view as? MKMapView else { return }
 
             let point = gesture.location(in: mapView)
 
-            // Don't add waypoint if tap hit an existing annotation
+            // Don't process if tap hit the callout
+            if let callout = calloutContainer, callout.frame.contains(point) {
+                return
+            }
+
+            // Don't process if tap hit an existing annotation
             for annotation in mapView.annotations {
                 if let view = mapView.view(for: annotation) {
                     if view.frame.contains(point) {
@@ -317,6 +418,15 @@ struct NauticalMapView: UIViewRepresentable {
                     }
                 }
             }
+
+            // If callout was showing, dismiss it without adding waypoint
+            if isShowingCallout {
+                dismissCallout(in: mapView)
+                return
+            }
+
+            // Only add waypoint in route mode
+            guard parent.isRouteMode else { return }
 
             let coordinate = mapView.convert(point, toCoordinateFrom: mapView)
             parent.onTapCoordinate?(coordinate)
@@ -376,15 +486,184 @@ struct NauticalMapView: UIViewRepresentable {
 
         func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
             if let waypointAnnotation = annotation as? WaypointAnnotation {
-                parent?.onWaypointTapped?(waypointAnnotation.waypoint)
-                mapView.deselectAnnotation(annotation, animated: false)
+                showCallout(for: waypointAnnotation, in: mapView)
             }
+        }
+
+        func mapView(_ mapView: MKMapView, didDeselect annotation: MKAnnotation) {
+            if annotation is WaypointAnnotation {
+                removeCallout()
+            }
+        }
+
+        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            updateCalloutPosition(in: mapView)
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             if isProgrammaticRegionChange {
                 isProgrammaticRegionChange = false
             }
+            updateCalloutPosition(in: mapView)
+        }
+    }
+}
+
+// MARK: - Callout Bubble Shape
+
+struct CalloutBubbleShape: Shape {
+    var cornerRadius: CGFloat = 10
+    var triangleHeight: CGFloat = 8
+    var triangleWidth: CGFloat = 14
+
+    func path(in rect: CGRect) -> Path {
+        let cardBottom = rect.height - triangleHeight
+        var path = Path()
+
+        path.move(to: CGPoint(x: 0, y: cornerRadius))
+        path.addArc(tangent1End: CGPoint(x: 0, y: 0),
+                     tangent2End: CGPoint(x: cornerRadius, y: 0),
+                     radius: cornerRadius)
+        path.addLine(to: CGPoint(x: rect.width - cornerRadius, y: 0))
+        path.addArc(tangent1End: CGPoint(x: rect.width, y: 0),
+                     tangent2End: CGPoint(x: rect.width, y: cornerRadius),
+                     radius: cornerRadius)
+        path.addLine(to: CGPoint(x: rect.width, y: cardBottom - cornerRadius))
+        path.addArc(tangent1End: CGPoint(x: rect.width, y: cardBottom),
+                     tangent2End: CGPoint(x: rect.width - cornerRadius, y: cardBottom),
+                     radius: cornerRadius)
+        path.addLine(to: CGPoint(x: rect.midX + triangleWidth / 2, y: cardBottom))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.height))
+        path.addLine(to: CGPoint(x: rect.midX - triangleWidth / 2, y: cardBottom))
+        path.addLine(to: CGPoint(x: cornerRadius, y: cardBottom))
+        path.addArc(tangent1End: CGPoint(x: 0, y: cardBottom),
+                     tangent2End: CGPoint(x: 0, y: cardBottom - cornerRadius),
+                     radius: cornerRadius)
+        path.closeSubpath()
+
+        return path
+    }
+}
+
+// MARK: - Waypoint Callout Content
+
+struct WaypointCalloutContent: View {
+    let waypoint: Waypoint
+    let onClose: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 5) {
+                // Header: risk dot, name, buttons
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(riskColor)
+                        .frame(width: 8, height: 8)
+                    Text(waypoint.name ?? "Nokta \(waypoint.orderIndex + 1)")
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    Spacer()
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.red.opacity(0.6))
+                    }
+                    Button(action: onClose) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+
+                if waypoint.windSpeed != nil {
+                    Divider()
+
+                    // Row 1: Wind + Temperature
+                    HStack(spacing: 0) {
+                        weatherItem(
+                            icon: "wind",
+                            value: String(format: "%.0f", waypoint.windSpeed ?? 0),
+                            unit: "km/h",
+                            extra: waypoint.windDirection?.windDirectionText,
+                            tint: Color.windColor(for: waypoint.windSpeed ?? 0)
+                        )
+                        weatherItem(
+                            icon: "thermometer.medium",
+                            value: waypoint.temperature.map { "\(Int($0))" } ?? "-",
+                            unit: "°C",
+                            extra: nil,
+                            tint: .orange
+                        )
+                    }
+
+                    // Row 2: Wave + Period
+                    HStack(spacing: 0) {
+                        weatherItem(
+                            icon: "water.waves",
+                            value: waypoint.waveHeight.map { String(format: "%.1f", $0) } ?? "-",
+                            unit: "m",
+                            extra: nil,
+                            tint: Color.waveColor(for: waypoint.waveHeight ?? 0)
+                        )
+                        weatherItem(
+                            icon: "timer",
+                            value: (waypoint.wavePeriod ?? 0) > 0
+                                ? String(format: "%.1f", waypoint.wavePeriod!) : "-",
+                            unit: "sn",
+                            extra: nil,
+                            tint: .cyan
+                        )
+                    }
+                } else if waypoint.isLoading {
+                    Divider()
+                    HStack(spacing: 4) {
+                        ProgressView().scaleEffect(0.5)
+                        Text("Yukleniyor...")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(height: 24)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+
+            // Space for triangle
+            Spacer().frame(height: 8)
+        }
+        .frame(width: 200)
+        .background(.regularMaterial)
+        .clipShape(CalloutBubbleShape())
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
+    }
+
+    @ViewBuilder
+    private func weatherItem(icon: String, value: String, unit: String, extra: String?, tint: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+                .foregroundStyle(tint)
+            Text(value)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+            Text(unit)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+            if let extra = extra {
+                Text(extra)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var riskColor: Color {
+        switch waypoint.riskLevel {
+        case .green: return .green
+        case .yellow: return .orange
+        case .red: return .red
+        case .unknown: return .gray
         }
     }
 }
