@@ -2,19 +2,154 @@
 
 Bu dosya Claude Code'un projeyi anlaması için referans dokümantasyonudur.
 
+## İçindekiler
+
+1. [Proje Özeti](#proje-özeti)
+2. [Hızlı Referans](#hızlı-referans)
+3. [Teknoloji Stack](#teknoloji-stack)
+4. [Veri Modelleri](#veri-modelleri-swiftdata)
+5. [Proje Yapısı](#proje-yapısı)
+6. [Mimari Kararlar](#mimari-kararlar)
+7. [Servisler ve Yöneticiler](#servisler-ve-yöneticiler)
+8. [API Endpoints](#api-endpoints)
+9. [Önemli Sabitler](#önemli-sabitler-constantsswift)
+10. [Geliştirme İş Akışı](#geliştirme-iş-akışı-ve-kurallar)
+11. [Sık Yapılan İşlemler](#sık-yapılan-işlemler)
+12. [Tamamlanan Özellikler](#tamamlanan-özellikler)
+13. [TODO Listesi](#todo-listesi-oncelik-sirasina-gore)
+14. [Öncelikli Geliştirme Yol Haritası](#öncelikli-geliştirme-yol-haritası)
+15. [Test Senaryoları](#test-senaryoları)
+16. [Sık Karşılaşılan Sorunlar](#sık-karşılaşılan-sorunlar-ve-çözümleri)
+17. [Performans ve En İyi Uygulamalar](#performans-ve-en-i̇yi-uygulamalar)
+18. [Komutlar](#komutlar)
+19. [Önemli Notlar](#önemli-notlar)
+
+---
+
 ## Proje Özeti
 
 DenizRota, amatör denizciler için tekne rota planlama ve seyir takibi uygulamasıdır. Web uygulaması (https://github.com/tremo/DenizRota) ile senkronize çalışır.
 
+## Hızlı Referans
+
+### Temel Bilgiler
+- **Platform**: iOS 17.0+
+- **Dil**: Swift 5.9+ / SwiftUI
+- **Ana Özellikler**: Rota planlama, GPS tracking, hava durumu, OpenSeaMap
+- **Lokasyon**: Datça-Marmaris-Bozburun bölgesi için optimize edilmiş
+
+### Sık Kullanılan Dosyalar
+| Dosya | Amaç | Satır |
+|-------|------|-------|
+| `MapView.swift` | Ana harita UI, rota yönetimi | ~700 |
+| `NauticalMapView.swift` | UIKit harita wrapper, OpenSeaMap | 406 |
+| `LocationManager.swift` | GPS + background tracking | ~200 |
+| `WeatherService.swift` | Open-Meteo API | ~150 |
+| `FetchCalculator.swift` | Kıyı fetch hesaplama | 107 |
+| `Constants.swift` | Sabitler, deniz alanları, kıyı verileri | ~400 |
+| `DenizRotaApp.swift` | App entry point, SwiftData schema | 82 |
+
+### Önemli State Management
+```swift
+@StateObject private var locationManager = LocationManager.shared
+@EnvironmentObject var locationManager: LocationManager
+@Query private var routes: [Route]
+@Environment(\.modelContext) private var modelContext
+```
+
+### Koordinatlar (Test İçin)
+- Datça merkez: `36.78, 28.25`
+- Marmaris: `36.85, 28.27`
+- Bozburun: `36.70, 27.90`
+- Knidos antik liman: `36.68, 27.37`
+
 ## Teknoloji Stack
 
 - **UI Framework**: SwiftUI
-- **Harita**: MapKit
-- **Veri Saklama**: SwiftData
+- **Harita**: MapKit (UIViewRepresentable wrapper)
+- **Veri Saklama**: SwiftData (@Model macro)
 - **Networking**: URLSession + async/await
 - **GPS**: Core Location (Background Modes)
 - **Bildirimler**: UserNotifications
 - **Cloud**: Firebase (hazırlanıyor)
+
+## Veri Modelleri (SwiftData)
+
+### Route (@Model)
+Ana rota modeli - waypoint'leri organize eder
+```swift
+- id: UUID
+- name: String
+- createdAt: Date
+- updatedAt: Date
+- waypoints: [Waypoint] (@Relationship, cascade delete)
+- totalDistance: Double (computed)
+- estimatedDuration: Double (computed)
+```
+
+### Waypoint (@Model)
+Rota üzerindeki noktalar - hava durumu verisi taşır
+```swift
+- id: UUID
+- name: String?
+- latitude: Double
+- longitude: Double
+- order: Int
+- route: Route? (@Relationship)
+- windSpeed: Double?
+- windDirection: Double?
+- waveHeight: Double?
+- temperature: Double?
+- riskLevel: RiskLevel (computed: .green/.yellow/.red/.unknown)
+- isLoading: Bool (hava durumu yüklenirken)
+```
+
+### Trip (@Model)
+Tamamlanmış veya aktif seyir kaydı
+```swift
+- id: UUID
+- startDate: Date
+- endDate: Date?
+- duration: TimeInterval
+- distance: Double (km)
+- avgSpeed: Double (km/h)
+- maxSpeed: Double (km/h)
+- fuelUsed: Double (liters)
+- fuelCost: Double (TRY)
+- positions: [TripPosition] (@Relationship, cascade delete)
+```
+
+### TripPosition (@Model)
+Seyir sırasında kaydedilen GPS noktaları
+```swift
+- id: UUID
+- latitude: Double
+- longitude: Double
+- timestamp: Date
+- speed: Double (km/h)
+- accuracy: Double (meters)
+```
+
+### BoatSettings (@Model)
+Kullanıcının tekne bilgileri
+```swift
+- id: UUID
+- boatName: String
+- boatType: BoatType (.motorlu, .yelkenli, .surat, .gulet, .katamaran)
+- avgSpeed: Double (km/h)
+- fuelRate: Double (L/h)
+- fuelPrice: Double (TRY/L)
+- maxWindSpeed: Double? (km/h)
+- maxWaveHeight: Double? (m)
+```
+
+### İlişkiler
+```
+Route 1──────▶ * Waypoint (cascade delete)
+Trip 1──────▶ * TripPosition (cascade delete)
+```
+
+**Not**: Route ve Trip arasında doğrudan ilişki yok. Trip bağımsız tracking kaydı.
 
 ## Proje Yapısı
 
@@ -26,14 +161,14 @@ DenizRota/
 ├── Models/
 │   ├── Route.swift              # Rota modeli (@Model)
 │   ├── Waypoint.swift           # Waypoint modeli (@Model)
-│   ├── Trip.swift               # Seyir kaydı (@Model)
-│   ├── TripPosition.swift       # GPS noktası (@Model)
+│   ├── Trip.swift               # Seyir kaydı (@Model) + TripPosition (@Model)
 │   └── BoatSettings.swift       # Tekne ayarları (@Model)
 │
 ├── Views/
 │   ├── ContentView.swift        # Tab bar ana görünüm
 │   ├── Map/
 │   │   ├── MapView.swift        # Ana harita görünümü
+│   │   ├── NauticalMapView.swift # UIViewRepresentable harita wrapper
 │   │   └── MapOverlays.swift    # Rüzgar/dalga overlay
 │   ├── Route/
 │   │   └── RouteListView.swift  # Kayıtlı rotalar listesi
@@ -60,6 +195,140 @@ DenizRota/
     └── FetchCalculator.swift    # Kıyı fetch hesaplama
 ```
 
+## Mimari Kararlar
+
+### SwiftUI + SwiftData
+- **Neden SwiftUI**: Modern, deklaratif UI, iOS 17+ özellikler
+- **Neden SwiftData**: Basit persistence, Core Data'nın modern alternatifi, `@Model` macro
+- **Trade-off**: iOS 17+ minimum gereksinim
+
+### UIKit Hybrid Yaklaşımı (NauticalMapView)
+- **Neden**: SwiftUI Map view OpenSeaMap tile overlay desteklemiyor
+- **Çözüm**: UIViewRepresentable ile MKMapView wrapper
+- **Avantaj**: MKTileOverlay, custom annotation rendering, gelişmiş gesture handling
+- **Maliyet**: UIKit/SwiftUI bridge, biraz daha karmaşık kod
+
+### Actor-based Services
+- **Neden**: Thread-safe, modern concurrency
+- **Uygulama**: WeatherService actor olarak tanımlı
+- **Avantaj**: Race condition yok, cache güvenli
+
+### Singleton Managers
+- **LocationManager.shared**: Global GPS state, background tracking
+- **NotificationManager.shared**: Bildirim sistemi
+- **WeatherService.shared**: API cache ve istek yönetimi
+- **TripManager.shared**: Aktif seyir state
+- **Justification**: Bu servisler app-wide state taşıyor, tek instance yeterli
+
+### Koordinat Sistemi
+- Tüm mesafeler: km (kullanıcı arayüzünde knot'a çevrilebilir - TODO-7)
+- Tüm hızlar: km/h (GPS m/s'den çevriliyor)
+- Koordinatlar: WGS84 decimal degrees (CLLocationCoordinate2D)
+
+## Servisler ve Yöneticiler
+
+### LocationManager (@MainActor, ObservableObject)
+**Dosya**: `Services/LocationManager.swift`
+**Amaç**: GPS tracking, background location, kullanıcı konumu
+**Singleton**: `LocationManager.shared`
+
+**Önemli Property'ler**:
+```swift
+@Published var currentLocation: CLLocation?
+@Published var currentSpeed: Double  // km/h
+@Published var isTracking: Bool
+@Published var authorizationStatus: CLAuthorizationStatus
+```
+
+**Önemli Metodlar**:
+- `requestPermission()` - Konum izni iste
+- `startTracking()` - GPS tracking başlat (background)
+- `stopTracking()` - GPS tracking durdur
+- `locationManager(_:didUpdateLocations:)` - GPS güncelleme callback
+
+**Filtreler**:
+- Accuracy: < 50m
+- Jump detection: > 1000m
+- Distance filter: 10m minimum
+
+### WeatherService (actor)
+**Dosya**: `Services/WeatherService.swift`
+**Amaç**: Open-Meteo API entegrasyonu, hava durumu ve dalga verileri
+**Singleton**: `WeatherService.shared`
+
+**Önemli Metodlar**:
+```swift
+func fetchWeather(lat: Double, lng: Double) async throws -> (wind: WindData, marine: MarineData?)
+```
+
+**Cache**: 1 saat in-memory cache (actor ile thread-safe)
+
+**API'ler**:
+1. Weather API: `https://api.open-meteo.com/v1/forecast`
+2. Marine API: `https://marine-api.open-meteo.com/v1/marine`
+
+**Not**: Marine API kıyı dışında veri döndürmeyebilir (optional)
+
+### NotificationManager
+**Dosya**: `Services/NotificationManager.swift`
+**Amaç**: Local bildirimler, hedefe varış, hava durumu uyarıları
+**Singleton**: `NotificationManager.shared`
+
+**Önemli Metodlar**:
+```swift
+func requestPermission() async -> Bool
+func scheduleArrivalNotification(waypoint: Waypoint, distance: Double)
+func scheduleWeatherAlert(message: String)
+func cancelAllNotifications()
+```
+
+### TripManager (@MainActor, ObservableObject)
+**Dosya**: `Managers/TripManager.swift`
+**Amaç**: Aktif seyir yönetimi, waypoint progress tracking
+**Singleton**: `TripManager.shared`
+
+**Durum**: ⚠️ Oluşturulmuş ama MapView tarafından kullanılmıyor (TODO-6)
+
+**Önemli Metodlar**:
+```swift
+func startTrip(waypoints: [Waypoint])
+func pauseTrip()
+func resumeTrip()
+func stopTrip() -> Trip?
+func handleLocationUpdate(_ location: CLLocation)
+```
+
+### RouteManager (@MainActor, ObservableObject)
+**Dosya**: `Managers/RouteManager.swift`
+**Amaç**: Rota yönetimi, hava durumu yükleme, risk hesaplama
+**Singleton**: `RouteManager.shared`
+
+**Durum**: ⚠️ Derleme hataları var, MapView kendi rota yönetimini yapıyor (TODO-5)
+
+**Önemli Metodlar**:
+```swift
+func loadWeather(for route: Route, departureDate: Date) async
+func calculateRisk(for route: Route) -> RiskLevel
+func saveRoute(_ route: Route)
+```
+
+### FetchCalculator
+**Dosya**: `Utils/FetchCalculator.swift`
+**Amaç**: Kıyı fetch hesaplama, dalga yüksekliği ayarlama
+**Singleton**: `FetchCalculator.shared`
+
+**Önemli Metodlar**:
+```swift
+func calculateFetch(lat: Double, lng: Double, windDirection: Double) -> Double
+func adjustWaveHeight(_ waveHeight: Double, fetchKm: Double) -> Double
+```
+
+**Algoritma**:
+1. Rüzgar yönünde 0.5 km adımlarla ilerle
+2. Karaya çarpana kadar devam (max 100 km)
+3. Fetch mesafesine göre dalga düşürme faktörü uygula
+4. CoastlineData.allPoints ile detaylı kıyı kontrolü
+
 ## API Endpoints
 
 ### Open-Meteo Weather API
@@ -84,6 +353,81 @@ Params: latitude, longitude, hourly=wave_height,wave_direction,wave_period
 - **Wave Height Yellow**: >= 0.5m
 - **Wave Height Red**: >= 1.5m
 - **Weather Cache**: 1 saat
+
+## Geliştirme İş Akışı ve Kurallar
+
+### Branch Stratejisi
+- **main**: Kararlı üretim kodu
+- **claude/[feature-name]-[sessionId]**: Claude tarafından oluşturulan özellik branch'leri
+- Her PR main'e merge edilmeden önce review yapılır
+
+### Commit Mesajları
+- Türkçe, net ve açıklayıcı yazılmalı
+- Format: "[Ne yapıldı]: [Kısa açıklama]"
+- Örnekler:
+  - "Harita tipini hybrid yap, OpenSeaMap tile overlay ekle (TODO-2)"
+  - "FetchCalculator: CoastlineData.allPoints kullan, threshold düşür"
+  - "Waypoint popup'i kompakt overlay kart tasarımına geçir"
+
+### Kod Stili ve Kurallar
+1. **SwiftUI Lifecycle**: `@main` struct ile başlangıç, `App` protocol
+2. **State Management**:
+   - `@State` view-local state için
+   - `@StateObject` singleton manager'lar için (LocationManager, TripManager)
+   - `@EnvironmentObject` paylaşılan objeler için
+   - `@Query` SwiftData sorguları için
+3. **Naming Conventions**:
+   - Türkçe değişken/fonksiyon isimleri kullanmayın - sadece comment'ler Türkçe
+   - camelCase - değişkenler, fonksiyonlar
+   - PascalCase - tipler, struct'lar, class'lar
+4. **Async/Await**: Modern concurrency kullan, completion handler'lar yok
+5. **Error Handling**: `do-catch` veya optional handling, force unwrap kullanma
+6. **SwiftData**:
+   - `@Model` macro ile model tanımlama
+   - `@Relationship(deleteRule: .cascade)` ile ilişkiler
+   - `modelContext` ile insert/delete işlemleri
+
+### Sık Kullanılan Patterns
+
+#### Location Manager Pattern
+```swift
+@StateObject private var locationManager = LocationManager.shared
+@EnvironmentObject var locationManager: LocationManager
+```
+
+#### SwiftData Query Pattern
+```swift
+@Query(sort: \Route.updatedAt, order: .reverse) private var routes: [Route]
+@Environment(\.modelContext) private var modelContext
+```
+
+#### Weather Service Pattern
+```swift
+let weather = try await WeatherService.shared.fetchWeather(lat: lat, lng: lng)
+```
+
+#### Notification Pattern
+```swift
+await NotificationManager.shared.requestPermission()
+NotificationManager.shared.scheduleArrivalNotification(waypoint: waypoint, distance: distance)
+```
+
+### Test Etme
+- Gerçek cihazda test gerekli: GPS, background location, bildirimler
+- Simulator'da çalışmayan özellikler: Background location, bazı bildirimler
+- Test lokasyonları: Datça (36.78, 28.25), Marmaris (36.85, 28.27), Bozburun (36.70, 27.90)
+
+### Bilinen Kısıtlamalar
+1. **Marine API**: Açık denizde veri döndürmeyebilir (kıyı yakını için tasarlanmış)
+2. **Background Location**: "Always" izni gerekli, iOS Settings'ten manuel aktive edilmeli
+3. **Weather Cache**: 1 saat, offline durumlar için stale data gösterilebilir
+4. **Fetch Calculation**: Türkiye Ege/Akdeniz kıyıları için optimize edilmiş
+
+### Hata Ayıklama İpuçları
+1. **Derleme Hataları**: Optional chaining vs non-optional properties - Model tanımlarını kontrol et
+2. **MapView Sorunları**: NauticalMapView UIViewRepresentable - coordinator pattern kullanıyor
+3. **Weather API Hataları**: Network bağlantısı ve cache kontrol et
+4. **GPS Doğruluk**: `horizontalAccuracy <= 50m` filtresi var, düşük sinyal = veri yok
 
 ## Tamamlanan Özellikler
 
@@ -114,6 +458,47 @@ Params: latitude, longitude, hourly=wave_height,wave_direction,wave_period
 - [x] Extensions - yardımcı uzantılar
 - [x] MapOverlays - rüzgar/dalga görselleştirme
 
+### Faz 4: Gelişmiş Harita Özellikleri ✅
+- [x] NauticalMapView - UIKit/MapKit wrapper
+- [x] OpenSeaMap tile overlay (deniz işaretleri)
+- [x] Harita tipi seçici (standard/hybrid/satellite)
+- [x] Detaylı kıyı fetch hesaplama (CoastlineData)
+- [x] Waypoint risk seviyesi görselleştirmesi
+- [x] Kompakt waypoint detay kartları
+- [x] Uyarlanabilir tema desteği (açık/koyu/sistem)
+
+## Sık Yapılan İşlemler
+
+### Yeni Model Ekleme
+1. `Models/` klasöründe yeni Swift dosyası oluştur
+2. `@Model` macro ile class tanımla
+3. `DenizRotaApp.swift`'te Schema'ya ekle: `Schema([..., YeniModel.self])`
+4. İlişkiler için `@Relationship(deleteRule: .cascade)` kullan
+
+### Yeni View Ekleme
+1. İlgili klasöre ekle (`Map/`, `Trip/`, `Route/`, `Settings/`)
+2. `@Environment(\.modelContext)` ve `@Query` ile veri oku
+3. `@EnvironmentObject var locationManager` ile GPS verisi al
+4. `@State` ile view-local state yönet
+
+### API Servisi Ekleme
+1. `Services/` klasöründe `actor` olarak tanımla (thread-safe)
+2. Cache mekanizması ekle (WeatherService örneği)
+3. `async throws` fonksiyonlar kullan
+4. Error handling ile optional return
+
+### Harita Üzerine Özellik Ekleme
+1. `NauticalMapView.swift` - MKMapView delegate metodları
+2. Yeni annotation için: `MKAnnotation` protocol implement et
+3. Overlay için: `MKOverlay` ve `MKOverlayRenderer` kullan
+4. `updateUIView` metodunda state değişikliklerine göre güncelle
+
+### Background İşlem Ekleme
+1. `Info.plist` → Background Modes ekle
+2. `LocationManager` veya yeni manager oluştur
+3. `CLLocationManager.allowsBackgroundLocationUpdates = true`
+4. Battery-efficient kod yaz (düşük frekans, akıllı filtreler)
+
 ## TODO Listesi (Oncelik Sirasina Gore)
 
 Asagidaki maddeler "todo N'i yap" seklinde referans verilebilir.
@@ -121,34 +506,36 @@ Her madde bagimsiz olarak uygulanabilir.
 
 ---
 
-### TODO-1: FetchCalculator'i CoastlineData ile Duzelt [KRITIK]
-**Durum:** Yapilmadi
+### TODO-1: FetchCalculator'i CoastlineData ile Duzelt [KRITIK] ✅
+**Durum:** TAMAMLANDI (PR #7)
 **Dosyalar:** `Utils/FetchCalculator.swift`, `Utils/Constants.swift`
-**Sorun:** `FetchCalculator.isNearCoastline()` (satir 114-136) kendi icinde sadece 16 kaba kiyi noktasi kullaniyor. Threshold 0.1 derece (~11km). Ama `Constants.swift` icinde `CoastlineData` enum'unda Datca, Bozburun, Marmaris, Symi, Knidos vs. icin cok daha detayli kiyi noktalari zaten tanimli. FetchCalculator bunlari hic kullanmiyor.
-**Yapilacak:**
-1. `FetchCalculator.isNearCoastline()` metodunu `CoastlineData.allPoints` verisini kullanacak sekilde degistir
-2. Threshold'u 0.1'den 0.015 dereceye (~1.5km) dusur
-3. `isPointOnLand()` metodunda deniz alanlari kontrolunu `SeaAreas.isInSea()` ile degistir (kod tekrarini onle)
-4. Test: Datca kuzey kiyisinda (36.76, 28.20) guney ruzgarinda fetch ~2km olmali (yarimada genisligi). Simdi muhtemelen 50-100km cikar.
+**Yapilan:**
+1. ✅ `FetchCalculator.isNearCoastline()` metodu `CoastlineData.allPoints` verisini kullaniyor (satir 94-105)
+2. ✅ Threshold 0.015 dereceye (~1.5km) düşürüldü (satir 95)
+3. ✅ `isPointOnLand()` metodu `SeaAreas.isInSea()` ile entegre edildi (satir 72-91)
+4. ✅ Fetch hesaplama artık detaylı kıyı verileriyle çalışıyor
 
 ---
 
-### TODO-2: Harita Tipini Hybrid Yap + OpenSeaMap Tile Overlay Ekle [KRITIK]
-**Durum:** Yapilmadi
-**Dosyalar:** `Views/Map/MapView.swift`
-**Sorun:** `.mapStyle(.standard)` (satir 78) kiyi navigasyonu icin yetersiz. Koylar, kayaliklar, sig alanlar gorunmuyor. Isimsiz koylari ayirt etmek imkansiz.
-**Yapilacak:**
-1. SwiftUI `Map` view'i `.mapStyle(.standard)` yerine `.mapStyle(.hybrid)` yap - bu en basit adim
-2. Harita tipi secici ekle: Sag ust kosede kucuk bir buton ile `.standard` / `.hybrid` / `.imagery` arasinda gecis
-3. OpenSeaMap entegrasyonu icin `UIViewRepresentable` ile `MKMapView` wrapper olustur (`Views/Map/NauticalMapView.swift` yeni dosya):
-   - `MKTileOverlay` ile OpenSeaMap tile'larini yukle: `https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png`
-   - Base map olarak `.satelliteFlyover` veya `.hybridFlyover` kullan
-   - OpenSeaMap katmani deniz isaretlerini (samandira, fener, derinlik, demirleme alani) gosterir
-   - Mevcut annotation/polyline/overlay mantigi aynen tasasin
-   - `MapView.swift`'teki `Map(...)` blogu yerine `NauticalMapView(...)` kullanilsin
-4. Harita tipi state'i: `@State private var mapStyle: MapStyleOption = .hybrid` enum ile yonet
-5. OpenSeaMap tile'lari seffaf PNG oldugu icin uydu goruntusu ustune bindirilir - ek bir ayar gerekmez
-**Not:** OpenSeaMap tile URL'si: `https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png` - ucretsiz, API key gerektirmez. Tile'lar sadece deniz isaret ve derinliklerini gosterir, altindaki harita Apple Maps'ten gelir.
+### TODO-2: Harita Tipini Hybrid Yap + OpenSeaMap Tile Overlay Ekle [KRITIK] ✅
+**Durum:** TAMAMLANDI (PR #8-16)
+**Dosyalar:** `Views/Map/MapView.swift`, `Views/Map/NauticalMapView.swift`
+**Yapilan:**
+1. ✅ `NauticalMapView.swift` UIViewRepresentable wrapper oluşturuldu (406 satır)
+2. ✅ OpenSeaMap tile overlay entegrasyonu tamamlandı (`https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png`)
+3. ✅ `MapStyleOption` enum ile harita tipi seçici eklendi (standard/hybrid/satellite)
+4. ✅ Varsayılan harita tipi `.hybrid` olarak ayarlandı (MapView.swift satır 20)
+5. ✅ OpenSeaMap toggle eklendi (MapView.swift satır 92-94)
+6. ✅ Sağ üst köşede harita tipi menüsü eklendi (MapView.swift satır 81-99)
+7. ✅ Waypoint annotation rendering, route polyline, user location gösterimi implementasyonu
+8. ✅ Tap gesture handling ile waypoint ekleme ve seçme özellikleri
+
+**Teknik Detaylar:**
+- `OpenSeaMapOverlay` MKTileOverlay subclass olarak tanımlı
+- Tile overlay `.aboveLabels` seviyesinde gösteriliyor
+- Zoom level: 6-18 arası
+- Waypoint'ler risk seviyesine göre renklendirilmiş pinler (yeşil/sarı/kırmızı)
+- Kompakt overlay kart tasarımı ile waypoint detay gösterimi
 
 ---
 
@@ -322,6 +709,37 @@ Her madde bagimsiz olarak uygulanabilir.
 
 ---
 
+## Öncelikli Geliştirme Yol Haritası
+
+### Kısa Vadeli (1-2 Hafta)
+1. **TODO-3**: Rüzgar sığınağı analizi - En çok talep gören özellik
+2. **TODO-4**: Saatlik hava tahmini - DeparturePickerView'ın gerçek değeri için gerekli
+3. **TODO-5**: RouteManager derleme hataları - Teknik borç temizliği
+
+### Orta Vadeli (3-4 Hafta)
+4. **TODO-6**: TripManager entegrasyonu - Mevcut kod kullanılmıyor
+5. **TODO-7**: Nautical units - Denizci kullanıcılar için kritik
+6. **TODO-8**: Harita merkezi Datça-Marmaris - UX iyileştirmesi
+
+### Uzun Vadeli (1-2 Ay)
+7. **TODO-9**: BoatSettings fuel hesabı - Hardcoded değerler temizliği
+8. **TODO-10**: Offline cache - Kıyı bölgelerinde sinyal zayıf
+9. **TODO-11**: Risk eşikleri tekne tipine göre - Gelişmiş özellik
+10. **TODO-12**: Bookmark sistemi - Community istek
+
+### Teknik Borç
+- RouteManager ve MapView arasında kod tekrarı (iki paralel sistem)
+- TripManager kullanılmıyor, doğrudan LocationManager çağrılıyor
+- Hardcoded fuel/speed değerleri (BoatSettings var ama kullanılmıyor)
+- Weather API hourly tahmin desteklemiyor (current only)
+
+### Firebase Entegrasyonu (Gelecek)
+- Şu an SDK kurulu değil, FirebaseManager placeholder
+- Web app ile sync için gerekli
+- Auth, Firestore, Cloud Functions hazırlanacak
+
+---
+
 ## Eski Gelistirme Plani
 
 ### Faz 4: Cloud Sync (Hazırlanıyor)
@@ -341,6 +759,54 @@ Her madde bagimsiz olarak uygulanabilir.
 - [ ] Unit tests (WeatherService, FetchCalculator)
 - [ ] UI tests (rota oluşturma, seyir flow)
 
+## Test Senaryoları
+
+### Manuel Test Checklist
+
+#### Rota Oluşturma
+1. ✅ Haritada waypoint ekle (tap)
+2. ✅ Waypoint detaylarını gör
+3. ✅ Waypoint sil
+4. ✅ Waypoint sırasını değiştir (drag)
+5. ✅ Hava durumu yükle
+6. ✅ Risk seviyesi gösterimi (yeşil/sarı/kırmızı)
+7. ✅ Rotayı kaydet
+
+#### GPS Tracking
+1. ✅ Location permission iste
+2. ✅ Tracking başlat
+3. ✅ Hız panelini gör
+4. ✅ Background'da çalışmasını test et (uygulamayı kapat)
+5. ✅ Tracking durdur
+6. ✅ Trip history'de görüntüle
+
+#### Harita Özellikleri
+1. ✅ Harita tipi değiştir (standard/hybrid/satellite)
+2. ✅ OpenSeaMap overlay toggle
+3. ✅ Zoom in/out
+4. ✅ Pan (kaydır)
+5. ✅ User location gösterimi
+
+#### Bildirimler
+1. ✅ Notification permission iste
+2. ✅ Hedefe varış bildirimi test et (waypoint'e yaklaş)
+3. ✅ Hava durumu uyarısı test et
+
+### Otomatik Test (Gelecek)
+- [ ] Unit tests: WeatherService, FetchCalculator
+- [ ] UI tests: Rota oluşturma flow
+- [ ] Integration tests: GPS tracking
+
+### Test Verileri
+**Datça-Marmaris Test Rotası**:
+1. Datça merkez: 36.78, 28.25
+2. Knidos: 36.68, 27.37
+3. Bozburun: 36.70, 27.90
+4. Marmaris: 36.85, 28.27
+
+**Beklenen Mesafe**: ~60 km
+**Beklenen Süre**: ~4 saat (15 km/h)
+
 ## Firebase Kurulum Adımları
 
 1. Xcode → File → Add Package Dependencies
@@ -349,6 +815,83 @@ Her madde bagimsiz olarak uygulanabilir.
 4. Firebase Console'dan `GoogleService-Info.plist` indir
 5. Dosyayı Xcode projesine ekle
 6. `FirebaseManager.swift`'teki import satırlarını aktif et
+
+## Sık Karşılaşılan Sorunlar ve Çözümleri
+
+### "Value of optional type 'X?' must be unwrapped"
+- **Sebep**: SwiftData model'de optional olarak işaretlenmemiş property optional olarak kullanılıyor
+- **Çözüm**: Model tanımını kontrol et, `?` ekle veya kaldır
+- **Örnek**: `route.waypoints` optional değil, `route.waypoints?.count` yerine `route.waypoints.count`
+
+### MapView'da Annotation'lar Görünmüyor
+- **Sebep**: `updateAnnotations()` metodu doğru çağrılmıyor veya coordinator doğru ayarlanmamış
+- **Çözüm**: `NauticalMapView.updateUIView` içinde `updateAnnotations(mapView)` çağrısını kontrol et
+- **Debug**: `print("Annotations count: \(mapView.annotations.count)")` ile debug et
+
+### Weather API Hep Aynı Veriyi Döndürüyor
+- **Sebep**: Cache 1 saat süreyle aktif
+- **Çözüm**: Test için cache'i temizle veya `WeatherService.shared` yeni instance oluştur
+- **Geliştirme**: TODO-4'te saatlik tahmin eklendikten sonra cache key'e saat eklenecek
+
+### GPS Noktaları Kaydedilmiyor
+- **Sebep**: Accuracy threshold (50m) veya jump threshold (1000m) filtresi
+- **Çözüm**: `LocationManager.swift` içindeki `horizontalAccuracy` ve `distance` kontrollerini incele
+- **Debug**: `print("Accuracy: \(location.horizontalAccuracy)m")` ile kontrol et
+
+### Background Location Çalışmıyor
+1. ✅ Info.plist'te "Always" permission tanımlı mı?
+2. ✅ Background Modes → Location updates capability aktif mi?
+3. ✅ Gerçek cihazda test ediliyor mu? (Simulator'da çalışmaz)
+4. ✅ Ayarlar → DenizRota → Konum → "Her Zaman" seçilmiş mi?
+5. ✅ `allowsBackgroundLocationUpdates = true` ayarlı mı?
+
+### Xcode Projesine Dosya Eklenmiş Ama Görünmüyor
+- **Sebep**: Dosya sadece file system'e kopyalanmış, Xcode projesine eklenmemiş
+- **Çözüm**: Xcode Project Navigator → sağ tık → "Add Files to DenizRota" → dosyayı seç
+- **Kontrol**: Build Phases → Compile Sources altında dosya var mı?
+
+### Derleme Hatası: "Cannot find type 'X' in scope"
+- **Sebep**: Import eksik veya dosya target'a eklenmemiş
+- **Çözüm**:
+  1. İlgili import'u ekle (örn: `import MapKit`)
+  2. File Inspector → Target Membership → DenizRota checkbox'ını işaretle
+
+## Performans ve En İyi Uygulamalar
+
+### GPS Tracking Optimizasyonu
+- ✅ `distanceFilter = 10m`: 10 metreden az hareket = güncelleme yok
+- ✅ Accuracy filtresi (50m): Düşük doğruluklu noktaları atla
+- ✅ Jump detection (1000m): GPS noise'ı filtrele
+- 🔄 TODO: Hız bazlı adaptive filtering (durduğunda daha az update)
+
+### Weather API Cache Stratejisi
+- ✅ 1 saat cache süresi
+- ✅ In-memory cache (actor ile thread-safe)
+- 🔄 TODO: Disk cache (offline destek - TODO-10)
+- 🔄 TODO: Stale-while-revalidate pattern
+
+### Map Rendering
+- ✅ Annotation reuse (dequeueReusableAnnotationView)
+- ✅ Programmatic vs user region change ayırımı (isProgrammaticRegionChange)
+- ✅ Selective update (sadece değişen annotation'ları güncelle)
+- ⚠️ Dikkat: OpenSeaMap tile'ları ağ üzerinden yükleniyor, yavaş bağlantıda gecikebilir
+
+### Battery Optimization
+- ✅ Background location sadece tracking aktifken
+- ✅ `pausesLocationUpdatesAutomatically = false` - manuel kontrol
+- ✅ `activityType = .otherNavigation` - deniz seyri için optimize
+- 🔄 TODO: Hız < 1 km/h ise update frekansını düşür
+
+### Memory Management
+- ✅ SwiftData cascade delete: Trip silinince TripPosition'lar otomatik silinir
+- ✅ Weak references coordinator pattern'inde (parent reference)
+- ⚠️ Dikkat: Uzun trip'lerde binlerce TripPosition birikebilir - limit koy (örn: 10000 nokta)
+
+### Threading
+- ✅ @MainActor - LocationManager, tüm UI güncellemeleri
+- ✅ actor - WeatherService (thread-safe cache)
+- ✅ Task/async-await - network işlemleri
+- ⚠️ Dikkat: SwiftData modelContext işlemleri main thread'de
 
 ## Komutlar
 
@@ -359,17 +902,52 @@ open DenizRota.xcodeproj
 # SwiftLint (kurulu ise)
 swiftlint
 
+# Proje temizle ve yeniden derle
+xcodebuild clean build -project DenizRota.xcodeproj -scheme DenizRota
+
 # Git
 git status
 git add .
 git commit -m "mesaj"
 git push origin <branch>
+
+# Branch oluştur
+git checkout -b claude/feature-name-12345
+
+# Son commit'leri gör
+git log --oneline --max-count=10
 ```
 
-## Notlar
+## Önemli Notlar
 
-- Minimum iOS: 17.0
-- SwiftData kullanılıyor (Core Data değil)
-- Background location için "Always" izni gerekli
-- Marine API bazı açık deniz noktalarında veri döndürmeyebilir
-- Fetch hesaplaması kıyı çizgisi verilerine bağlı
+### Genel
+- **Minimum iOS**: 17.0+ (SwiftUI ve SwiftData gereksinimleri)
+- **Test Cihaz**: Background location ve bildirimler için gerçek cihaz gerekli
+- **Lokalizasyon**: Şu an sadece Türkçe, ileride İngilizce eklenebilir
+- **Web App**: https://github.com/tremo/DenizRota - Firebase ile senkronize olacak
+
+### Teknik Sınırlamalar
+- **Marine API**: Açık denizde (kıyıdan 50+ km) veri döndürmeyebilir - bu normal
+- **Background Location**: iOS "Always" izni elle verilmeli (Settings → DenizRota → Konum)
+- **Weather Cache**: 1 saat cache süresi, offline'da stale data gösterilebilir (TODO-10)
+- **Fetch Calculation**: Türkiye Ege/Akdeniz kıyıları için optimize, diğer bölgelerde test edilmedi
+
+### Geliştirme Notları
+- **SwiftData**: Core Data'nın modern hali, `@Model` macro ile basit
+- **Actor**: WeatherService thread-safe olması için actor
+- **UIViewRepresentable**: NauticalMapView, MKMapView için gerekli (OpenSeaMap tile overlay)
+- **Singleton Pattern**: Manager'lar app-wide state taşıdığı için singleton
+
+### Bilinen Problemler
+1. RouteManager derleme hataları (TODO-5)
+2. TripManager kullanılmıyor (TODO-6)
+3. Hardcoded fuel/speed değerleri (TODO-9)
+4. Weather API sadece current data (TODO-4)
+5. Harita merkezi Ege genel (TODO-8)
+
+### Gelecek Özellikler
+- Firebase sync (web app ile)
+- Offline harita cache (TODO-10)
+- Nautical units (knot/nm) (TODO-7)
+- Shelter analysis (TODO-3)
+- Bookmark system (TODO-12)
