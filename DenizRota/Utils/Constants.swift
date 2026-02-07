@@ -242,18 +242,8 @@ extension RiskLevel {
     }
 }
 
-// MARK: - Boat Type Display Names
+// MARK: - Boat Type Icons
 extension BoatType {
-    var displayName: String {
-        switch self {
-        case .motorlu: return "Motorlu Tekne"
-        case .yelkenli: return "Yelkenli"
-        case .gulet: return "Gulet"
-        case .katamaran: return "Katamaran"
-        case .surat: return "Sürat Teknesi"
-        }
-    }
-
     var iconName: String {
         switch self {
         case .motorlu: return "ferry"
