@@ -13,25 +13,26 @@ struct TripTrackingView: View {
     let boatSettings: BoatSettings?
     let onTripEnd: (Trip?) -> Void
 
-    @State private var mapRegion = MKCoordinateRegion(
+    @State private var cameraPosition: MapCameraPosition = .region(MKCoordinateRegion(
         center: AppConstants.defaultMapCenter,
         span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
-    )
+    ))
     @State private var showStopConfirmation = false
     @State private var isPaused = false
 
     var body: some View {
         ZStack {
             // Full screen map
-            Map(coordinateRegion: $mapRegion,
-                showsUserLocation: true,
-                annotationItems: waypoints) { waypoint in
-                MapAnnotation(coordinate: waypoint.coordinate) {
-                    WaypointMarker(
-                        number: waypoint.orderIndex + 1,
-                        riskLevel: waypoint.riskLevel,
-                        isTarget: waypoint.orderIndex == tripManager.currentWaypointIndex
-                    )
+            Map(position: $cameraPosition) {
+                UserAnnotation()
+                ForEach(waypoints) { waypoint in
+                    Annotation("", coordinate: waypoint.coordinate) {
+                        WaypointMarker(
+                            number: waypoint.orderIndex + 1,
+                            riskLevel: waypoint.riskLevel,
+                            isTarget: waypoint.orderIndex == tripManager.currentWaypointIndex
+                        )
+                    }
                 }
             }
             .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
@@ -251,11 +252,18 @@ struct TripTrackingView: View {
 
     // MARK: - Methods
     private func setupMap() {
+        let center: CLLocationCoordinate2D
         if let firstWaypoint = waypoints.first {
-            mapRegion.center = firstWaypoint.coordinate
+            center = firstWaypoint.coordinate
         } else if let userLocation = locationManager.currentLocation?.coordinate {
-            mapRegion.center = userLocation
+            center = userLocation
+        } else {
+            return
         }
+        cameraPosition = .region(MKCoordinateRegion(
+            center: center,
+            span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
+        ))
     }
 
     private func endTrip() {
@@ -430,11 +438,11 @@ struct TripSummaryView: View {
 
     private var mapPreview: some View {
         Group {
-            if let positions = trip.positions, positions.count > 1 {
-                let coords = positions.map { $0.coordinate }
+            if trip.positions.count > 1 {
+                let coords = trip.positions.map { $0.coordinate }
                 let center = coords.center ?? AppConstants.defaultMapCenter
 
-                Map(coordinateRegion: .constant(MKCoordinateRegion(
+                Map(initialPosition: .region(MKCoordinateRegion(
                     center: center,
                     span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
                 ))) {
@@ -489,23 +497,3 @@ struct SummaryStatCard: View {
     }
 }
 
-// MARK: - Speed Panel View (Standalone)
-struct SpeedPanelView: View {
-    let speed: Double
-    let isTracking: Bool
-
-    var body: some View {
-        VStack(spacing: 4) {
-            Text("\(speed, specifier: "%.1f")")
-                .font(.system(size: 48, weight: .bold, design: .rounded))
-                .foregroundStyle(isTracking ? .primary : .secondary)
-
-            Text("km/h")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding()
-        .background(.ultraThinMaterial)
-        .cornerRadius(16)
-    }
-}

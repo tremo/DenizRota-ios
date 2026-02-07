@@ -239,7 +239,6 @@ class FirebaseManager: ObservableObject {
         guard isLoggedIn else { return }
 
         isLoading = true
-        defer { isLoading = false }
 
         // Routes sync
         // do {
@@ -252,6 +251,8 @@ class FirebaseManager: ObservableObject {
         //     let cloudTrips = try await loadTrips()
         //     // Merge logic...
         // } catch { }
+
+        isLoading = false
     }
 }
 
