@@ -36,14 +36,8 @@ class RouteManager: ObservableObject {
     func addWaypoint(at coordinate: CLLocationCoordinate2D) {
         guard let route = currentRoute else { return }
 
-        let waypoint = Waypoint(
-            latitude: coordinate.latitude,
-            longitude: coordinate.longitude,
-            orderIndex: route.waypoints?.count ?? 0
-        )
-        waypoint.name = "Nokta \(waypoint.orderIndex + 1)"
-
-        route.addWaypoint(waypoint)
+        let name = "Nokta \(route.waypoints.count + 1)"
+        route.addWaypoint(latitude: coordinate.latitude, longitude: coordinate.longitude, name: name)
         objectWillChange.send()
     }
 
@@ -56,8 +50,7 @@ class RouteManager: ObservableObject {
 
     func removeLastWaypoint() {
         guard let route = currentRoute,
-              let waypoints = route.waypoints,
-              let last = waypoints.max(by: { $0.orderIndex < $1.orderIndex }) else { return }
+              let last = route.waypoints.max(by: { $0.orderIndex < $1.orderIndex }) else { return }
         route.removeWaypoint(last)
         objectWillChange.send()
     }
@@ -69,23 +62,22 @@ class RouteManager: ObservableObject {
 
     func clearRoute() {
         guard let route = currentRoute else { return }
-        route.waypoints?.forEach { route.removeWaypoint($0) }
+        route.waypoints.forEach { route.removeWaypoint($0) }
         objectWillChange.send()
     }
 
     // MARK: - Weather Loading
 
     func loadWeatherForAllWaypoints(departureDate: Date = Date()) async {
-        guard let route = currentRoute,
-              let waypoints = route.waypoints, !waypoints.isEmpty else { return }
+        guard let route = currentRoute, !route.waypoints.isEmpty else { return }
 
         isLoadingWeather = true
 
         await withTaskGroup(of: (Waypoint, WeatherData?).self) { group in
-            for waypoint in waypoints {
+            for waypoint in route.waypoints {
                 group.addTask { @MainActor in
                     waypoint.isLoading = true
-                    let weather = await self.weatherService.fetchWeather(for: waypoint.coordinate, date: departureDate)
+                    let weather = try? await self.weatherService.fetchWeather(for: waypoint.coordinate)
                     return (waypoint, weather)
                 }
             }
@@ -105,7 +97,7 @@ class RouteManager: ObservableObject {
     func loadWeatherForWaypoint(_ waypoint: Waypoint, departureDate: Date = Date()) async {
         waypoint.isLoading = true
 
-        if let weather = await weatherService.fetchWeather(for: waypoint.coordinate, date: departureDate) {
+        if let weather = try? await weatherService.fetchWeather(for: waypoint.coordinate) {
             waypoint.updateWeather(from: weather)
         }
 
@@ -138,7 +130,7 @@ class RouteManager: ObservableObject {
             estimatedDuration: estimatedHours * 3600, // saniye
             fuelNeeded: fuelNeeded,
             fuelCost: fuelCost,
-            waypointCount: route.waypoints?.count ?? 0,
+            waypointCount: route.waypoints.count,
             maxRiskLevel: maxRisk
         )
     }
@@ -184,20 +176,16 @@ class RouteManager: ObservableObject {
         let newRoute = Route(name: "\(route.name) (Kopya)")
 
         for waypoint in route.sortedWaypoints {
-            let newWaypoint = Waypoint(
-                latitude: waypoint.latitude,
-                longitude: waypoint.longitude,
-                orderIndex: waypoint.orderIndex
-            )
-            newWaypoint.name = waypoint.name
-            newWaypoint.windSpeed = waypoint.windSpeed
-            newWaypoint.windDirection = waypoint.windDirection
-            newWaypoint.windGusts = waypoint.windGusts
-            newWaypoint.temperature = waypoint.temperature
-            newWaypoint.waveHeight = waypoint.waveHeight
-            newWaypoint.waveDirection = waypoint.waveDirection
-            newWaypoint.wavePeriod = waypoint.wavePeriod
-            newRoute.addWaypoint(newWaypoint)
+            newRoute.addWaypoint(latitude: waypoint.latitude, longitude: waypoint.longitude, name: waypoint.name)
+            if let newWp = newRoute.waypoints.last {
+                newWp.windSpeed = waypoint.windSpeed
+                newWp.windDirection = waypoint.windDirection
+                newWp.windGusts = waypoint.windGusts
+                newWp.temperature = waypoint.temperature
+                newWp.waveHeight = waypoint.waveHeight
+                newWp.waveDirection = waypoint.waveDirection
+                newWp.wavePeriod = waypoint.wavePeriod
+            }
         }
 
         context.insert(newRoute)
@@ -266,17 +254,8 @@ extension Waypoint {
         windGusts = data.windGusts
         temperature = data.temperature
 
-        // Fetch hesaplaması ile dalga yüksekliği düzeltmesi
-        if let waveHeight = data.waveHeight {
-            let fetchResult = FetchCalculator.shared.calculateFetch(
-                lat: latitude,
-                lng: longitude,
-                windDirection: data.windDirection
-            )
-            self.waveHeight = FetchCalculator.shared.adjustWaveHeight(waveHeight, fetchKm: fetchResult.fetchKm)
-        } else {
-            self.waveHeight = nil
-        }
+        // Dalga yüksekliğini doğrudan ata (WeatherService'te zaten fetch-adjusted)
+        self.waveHeight = data.waveHeight
 
         waveDirection = data.waveDirection
         wavePeriod = data.wavePeriod

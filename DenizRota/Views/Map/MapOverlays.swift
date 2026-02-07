@@ -457,7 +457,7 @@ class WeatherGridLoader {
 
                     group.addTask {
                         let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
-                        guard let weather = await self.weatherService.fetchWeather(for: coord, date: date) else {
+                        guard let weather = try? await self.weatherService.fetchWeather(for: coord) else {
                             return nil
                         }
                         return WindGridPoint(
@@ -498,16 +498,15 @@ class WeatherGridLoader {
 
                     group.addTask {
                         let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
-                        guard let weather = await self.weatherService.fetchWeather(for: coord, date: date),
-                              let waveHeight = weather.waveHeight else {
+                        guard let weather = try? await self.weatherService.fetchWeather(for: coord) else {
                             return nil
                         }
                         return WaveGridPoint(
                             lat: lat,
                             lng: lng,
-                            height: waveHeight,
-                            direction: weather.waveDirection ?? 0,
-                            period: weather.wavePeriod ?? 6
+                            height: weather.waveHeight,
+                            direction: weather.waveDirection,
+                            period: weather.wavePeriod
                         )
                     }
                 }
