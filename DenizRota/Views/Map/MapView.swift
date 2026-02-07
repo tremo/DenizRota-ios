@@ -57,7 +57,9 @@ struct MapView: View {
                 },
                 onWaypointTapped: { waypoint in
                     selectedWaypoint = waypoint
-                    showingWaypointSheet = true
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        showingWaypointSheet = true
+                    }
                 }
             )
             .ignoresSafeArea(edges: .top)
@@ -218,17 +220,34 @@ struct MapView: View {
             if !locationManager.hasAnyPermission {
                 PermissionOverlay()
             }
-        }
-        .sheet(isPresented: $showingWaypointSheet) {
-            if let waypoint = selectedWaypoint {
-                WaypointDetailSheet(
+
+            // Waypoint popup overlay
+            if showingWaypointSheet, let waypoint = selectedWaypoint {
+                Color.black.opacity(0.15)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            showingWaypointSheet = false
+                        }
+                    }
+                    .transition(.opacity)
+
+                WaypointPopupView(
                     waypoint: waypoint,
+                    onClose: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            showingWaypointSheet = false
+                        }
+                    },
                     onDelete: {
                         deleteWaypoint(waypoint)
-                        showingWaypointSheet = false
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            showingWaypointSheet = false
+                        }
                     }
                 )
-                .presentationDetents([.medium])
+                .transition(.scale(scale: 0.85).combined(with: .opacity))
+                .zIndex(10)
             }
         }
         .alert("Rotayi Kaydet", isPresented: $showingSaveRouteAlert) {
@@ -561,50 +580,220 @@ struct WaypointMarkerView: View {
     }
 }
 
-// MARK: - Waypoint Detail Sheet
+// MARK: - Waypoint Popup View
 
-struct WaypointDetailSheet: View {
+struct WaypointPopupView: View {
     let waypoint: Waypoint
+    let onClose: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Konum") {
-                    LabeledContent("Enlem", value: String(format: "%.5f", waypoint.latitude))
-                    LabeledContent("Boylam", value: String(format: "%.5f", waypoint.longitude))
-                }
-
-                if let windSpeed = waypoint.windSpeed {
-                    Section("Hava Durumu") {
-                        LabeledContent("Ruzgar", value: "\(Int(windSpeed)) km/h")
-                        if let gusts = waypoint.windGusts {
-                            LabeledContent("Hamle", value: "\(Int(gusts)) km/h")
-                        }
-                        if let temp = waypoint.temperature {
-                            LabeledContent("Sicaklik", value: "\(Int(temp))C")
-                        }
-                    }
-
-                    Section("Deniz Durumu") {
-                        if let wave = waypoint.waveHeight {
-                            LabeledContent("Dalga", value: String(format: "%.1f m", wave))
-                        }
-                        if let period = waypoint.wavePeriod, period > 0 {
-                            LabeledContent("Periyot", value: String(format: "%.1f s", period))
-                        }
-                    }
-                }
-
-                Section {
-                    Button("Bu Noktayi Sil", role: .destructive) {
-                        onDelete()
-                    }
+        VStack(spacing: 0) {
+            // Header
+            HStack(spacing: 8) {
+                Image(systemName: "mappin.circle.fill")
+                    .font(.body)
+                Text(waypoint.name ?? "Nokta \(waypoint.orderIndex + 1)")
+                    .font(.subheadline.bold())
+                Spacer()
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.caption2.bold())
+                        .padding(6)
+                        .background(.white.opacity(0.25))
+                        .clipShape(Circle())
                 }
             }
-            .navigationTitle(waypoint.name ?? "Waypoint \(waypoint.orderIndex + 1)")
-            .navigationBarTitleDisplayMode(.inline)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(headerColor)
+
+            // Content
+            VStack(spacing: 10) {
+                // Info bar: date + location type
+                HStack {
+                    HStack(spacing: 4) {
+                        Image(systemName: "calendar")
+                        Text(Date().dateTimeStringTR)
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    HStack(spacing: 4) {
+                        Image(systemName: locationIcon)
+                            .font(.system(size: 9))
+                        Text(locationTypeText)
+                    }
+                    .font(.caption2.bold())
+                    .foregroundStyle(locationColor)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(locationColor.opacity(0.1))
+                    .clipShape(Capsule())
+                }
+
+                // Weather grid or status
+                if waypoint.windSpeed != nil {
+                    weatherGrid
+                } else if waypoint.isLoading {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Yukleniyor...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(height: 80)
+                } else {
+                    HStack(spacing: 6) {
+                        Image(systemName: "cloud.slash")
+                            .foregroundStyle(.secondary)
+                        Text("Hava durumu yuklenemedi")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(height: 50)
+                }
+
+                // Delete button
+                Button(action: onDelete) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "trash")
+                            .font(.caption2)
+                        Text("Sil")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.red.opacity(0.7))
+                    .padding(.vertical, 4)
+                }
+            }
+            .padding(14)
         }
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+        .frame(width: 270)
+    }
+
+    // MARK: - Weather Grid
+
+    private var weatherGrid: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                // Wind
+                WeatherInfoCard(
+                    icon: "wind",
+                    value: String(format: "%.1f", waypoint.windSpeed ?? 0),
+                    unit: "km/h",
+                    subtitle: waypoint.windDirection?.windDirectionText ?? "-",
+                    tint: Color.windColor(for: waypoint.windSpeed ?? 0)
+                )
+
+                // Temperature
+                WeatherInfoCard(
+                    icon: "thermometer.medium",
+                    value: waypoint.temperature.map { "\(Int($0))" } ?? "-",
+                    unit: "°C",
+                    subtitle: "Sicaklik",
+                    tint: .orange
+                )
+            }
+
+            HStack(spacing: 8) {
+                // Wave height
+                WeatherInfoCard(
+                    icon: "water.waves",
+                    value: waypoint.waveHeight.map { String(format: "%.1f", $0) } ?? "-",
+                    unit: "m",
+                    subtitle: "Tahmini Dalga",
+                    tint: Color.waveColor(for: waypoint.waveHeight ?? 0)
+                )
+
+                // Wave period
+                WeatherInfoCard(
+                    icon: "timer",
+                    value: (waypoint.wavePeriod ?? 0) > 0
+                        ? String(format: "%.1f", waypoint.wavePeriod!) : "-",
+                    unit: "sn",
+                    subtitle: "Periyot",
+                    tint: .cyan
+                )
+            }
+        }
+    }
+
+    // MARK: - Computed Properties
+
+    private var headerColor: Color {
+        switch waypoint.riskLevel {
+        case .green: return .green
+        case .yellow: return .orange
+        case .red: return .red
+        case .unknown: return .blue
+        }
+    }
+
+    private var locationTypeText: String {
+        if !SeaAreas.isInSea(lat: waypoint.latitude, lng: waypoint.longitude) {
+            return "Kiyi"
+        }
+        let threshold = 0.02 // ~2 km
+        for point in CoastlineData.allPoints {
+            let distance = sqrt(pow(waypoint.latitude - point.lat, 2) + pow(waypoint.longitude - point.lng, 2))
+            if distance < threshold {
+                return "Kiyi yakini"
+            }
+        }
+        return "Acik deniz"
+    }
+
+    private var locationIcon: String {
+        let text = locationTypeText
+        if text == "Acik deniz" { return "sailboat.fill" }
+        return "water.waves"
+    }
+
+    private var locationColor: Color {
+        let text = locationTypeText
+        if text == "Acik deniz" { return .blue }
+        return .teal
+    }
+}
+
+// MARK: - Weather Info Card
+
+struct WeatherInfoCard: View {
+    let icon: String
+    let value: String
+    let unit: String
+    let subtitle: String
+    let tint: Color
+
+    var body: some View {
+        VStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 13))
+                .foregroundStyle(tint)
+
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(.system(.callout, design: .rounded, weight: .bold))
+                Text(unit)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(subtitle)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(tint.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 

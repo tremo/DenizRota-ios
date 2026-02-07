@@ -112,6 +112,15 @@ extension Double {
         String(format: "%.4f", self)
     }
 
+    /// Rüzgar yönünü Türkçe kısaltma olarak döndür (K, KD, D, GD, G, GB, B, KB)
+    var windDirectionText: String {
+        let directions = ["K", "KD", "D", "GD", "G", "GB", "B", "KB"]
+        let normalized = self.truncatingRemainder(dividingBy: 360)
+        let positive = normalized < 0 ? normalized + 360 : normalized
+        let index = Int((positive + 22.5) / 45) % 8
+        return directions[index]
+    }
+
     /// Mesafe formatı (1.5 km veya 500 m)
     var distanceString: String {
         if self >= 1.0 {
