@@ -98,6 +98,7 @@ struct NauticalMapView: UIViewRepresentable {
             action: #selector(Coordinator.handleTap(_:))
         )
         tapGesture.numberOfTapsRequired = 1
+        tapGesture.delegate = context.coordinator
         // Don't interfere with double-tap zoom
         for gesture in mapView.gestureRecognizers ?? [] {
             if let doubleTap = gesture as? UITapGestureRecognizer,
@@ -297,28 +298,42 @@ struct NauticalMapView: UIViewRepresentable {
 
     // MARK: - Coordinator
 
-    class Coordinator: NSObject, MKMapViewDelegate {
+    class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         var parent: NauticalMapView?
         var lastRegionCenter = CLLocationCoordinate2D(latitude: 0, longitude: 0)
         var lastRegionSpan = MKCoordinateSpan(latitudeDelta: 0, longitudeDelta: 0)
         var isProgrammaticRegionChange = false
 
-        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+        // MARK: - UIGestureRecognizerDelegate
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             guard let parent = parent, parent.isRouteMode,
-                  let mapView = gesture.view as? MKMapView else { return }
+                  let mapView = gestureRecognizer.view as? MKMapView else {
+                // Not in route mode - let MKMapView handle taps (annotation selection etc.)
+                return false
+            }
 
-            let point = gesture.location(in: mapView)
+            let point = gestureRecognizer.location(in: mapView)
 
-            // Don't add waypoint if tap hit an existing annotation
+            // Don't recognize if tap is on an existing annotation
+            // Let MKMapView handle it so didSelect fires
             for annotation in mapView.annotations {
                 if let view = mapView.view(for: annotation) {
-                    if view.frame.contains(point) {
-                        return
+                    let pointInView = view.convert(point, from: mapView)
+                    if view.point(inside: pointInView, with: nil) {
+                        return false
                     }
                 }
             }
 
-            let coordinate = mapView.convert(point, toCoordinateFrom: mapView)
+            return true
+        }
+
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            guard let parent = parent,
+                  let mapView = gesture.view as? MKMapView else { return }
+
+            let coordinate = mapView.convert(gesture.location(in: mapView), toCoordinateFrom: mapView)
             parent.onTapCoordinate?(coordinate)
         }
 
