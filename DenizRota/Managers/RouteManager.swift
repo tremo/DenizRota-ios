@@ -73,16 +73,21 @@ class RouteManager: ObservableObject {
 
         isLoadingWeather = true
 
-        await withTaskGroup(of: (Waypoint, WeatherData?).self) { group in
-            for waypoint in route.waypoints {
-                group.addTask { @MainActor in
-                    waypoint.isLoading = true
-                    let weather = try? await self.weatherService.fetchWeather(for: waypoint.coordinate)
-                    return (waypoint, weather)
+        // Koordinatlari onceden cikart (Sendable uyumluluk icin)
+        let coordinates = route.waypoints.map { $0.coordinate }
+        for waypoint in route.waypoints { waypoint.isLoading = true }
+
+        await withTaskGroup(of: (Int, WeatherData?).self) { group in
+            for (index, coordinate) in coordinates.enumerated() {
+                group.addTask {
+                    let weather = try? await self.weatherService.fetchWeather(for: coordinate)
+                    return (index, weather)
                 }
             }
 
-            for await (waypoint, weather) in group {
+            for await (index, weather) in group {
+                guard index < route.waypoints.count else { continue }
+                let waypoint = route.waypoints[index]
                 if let weather = weather {
                     waypoint.updateWeather(from: weather)
                 }
