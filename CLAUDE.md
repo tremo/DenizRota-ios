@@ -335,7 +335,7 @@ Her madde bagimsiz olarak uygulanabilir.
 - [x] Seyir tarihi/saati seçici (departure picker)
 - [x] Otomatik hava durumu güncelleme (15 dk)
 - [ ] Kayıtlı rotalar görünümünü geliştir
-- [ ] Dark mode desteği
+- [x] Dark mode desteği
 
 ### Testler
 - [ ] Unit tests (WeatherService, FetchCalculator)

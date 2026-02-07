@@ -4,6 +4,7 @@ import SwiftData
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var settingsList: [BoatSettings]
+    @AppStorage("themePreference") private var themePreference: String = ThemePreference.system.rawValue
 
     @State private var boatName = "Teknem"
     @State private var selectedBoatType: BoatType = .motorlu
@@ -13,6 +14,10 @@ struct SettingsView: View {
     @State private var fuelPrice: Double = 45
 
     @State private var showingSaveAlert = false
+
+    private var selectedTheme: ThemePreference {
+        get { ThemePreference(rawValue: themePreference) ?? .system }
+    }
 
     private var settings: BoatSettings? {
         settingsList.first
@@ -78,6 +83,24 @@ struct SettingsView: View {
                         .frame(width: 80)
                     Text("₺/L")
                         .foregroundStyle(.secondary)
+                }
+            }
+
+            // Görünüm
+            Section("Görünüm") {
+                HStack {
+                    Text("Tema")
+                    Spacer()
+                    Picker("Tema", selection: Binding(
+                        get: { selectedTheme },
+                        set: { themePreference = $0.rawValue }
+                    )) {
+                        ForEach(ThemePreference.allCases, id: \.self) { theme in
+                            Label(theme.displayName, systemImage: theme.iconName)
+                                .tag(theme)
+                        }
+                    }
+                    .pickerStyle(.menu)
                 }
             }
 
