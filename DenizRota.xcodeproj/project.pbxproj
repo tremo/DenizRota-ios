@@ -22,6 +22,15 @@
 		A1000013 /* RouteListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000013 /* RouteListView.swift */; };
 		A1000014 /* TripHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000014 /* TripHistoryView.swift */; };
 		A1000015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000015 /* Assets.xcassets */; };
+		A1000016 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000017 /* Constants.swift */; };
+		A1000017 /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000018 /* Extensions.swift */; };
+		A1000018 /* NauticalMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000019 /* NauticalMapView.swift */; };
+		A1000019 /* MapOverlays.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000020 /* MapOverlays.swift */; };
+		A1000020 /* DeparturePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000021 /* DeparturePickerView.swift */; };
+		A1000021 /* TripTrackingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000022 /* TripTrackingView.swift */; };
+		A1000022 /* FirebaseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000023 /* FirebaseManager.swift */; };
+		A1000023 /* RouteManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000024 /* RouteManager.swift */; };
+		A1000024 /* TripManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000025 /* TripManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,6 +50,15 @@
 		A2000014 /* TripHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripHistoryView.swift; sourceTree = "<group>"; };
 		A2000015 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A2000016 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A2000017 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
+		A2000018 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
+		A2000019 /* NauticalMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NauticalMapView.swift; sourceTree = "<group>"; };
+		A2000020 /* MapOverlays.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapOverlays.swift; sourceTree = "<group>"; };
+		A2000021 /* DeparturePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeparturePickerView.swift; sourceTree = "<group>"; };
+		A2000022 /* TripTrackingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripTrackingView.swift; sourceTree = "<group>"; };
+		A2000023 /* FirebaseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseManager.swift; sourceTree = "<group>"; };
+		A2000024 /* RouteManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteManager.swift; sourceTree = "<group>"; };
+		A2000025 /* TripManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripManager.swift; sourceTree = "<group>"; };
 		A3000000 /* DenizRota.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DenizRota.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -70,6 +88,7 @@
 				A5000003 /* Models */,
 				A5000004 /* Views */,
 				A5000005 /* Services */,
+				A5000013 /* Managers */,
 				A5000006 /* Utils */,
 				A5000007 /* Resources */,
 			);
@@ -121,6 +140,8 @@
 			isa = PBXGroup;
 			children = (
 				A2000012 /* FetchCalculator.swift */,
+				A2000017 /* Constants.swift */,
+				A2000018 /* Extensions.swift */,
 			);
 			path = Utils;
 			sourceTree = "<group>";
@@ -138,6 +159,8 @@
 			isa = PBXGroup;
 			children = (
 				A2000003 /* MapView.swift */,
+				A2000019 /* NauticalMapView.swift */,
+				A2000020 /* MapOverlays.swift */,
 			);
 			path = Map;
 			sourceTree = "<group>";
@@ -162,8 +185,20 @@
 			isa = PBXGroup;
 			children = (
 				A2000014 /* TripHistoryView.swift */,
+				A2000021 /* DeparturePickerView.swift */,
+				A2000022 /* TripTrackingView.swift */,
 			);
 			path = Trip;
+			sourceTree = "<group>";
+		};
+		A5000013 /* Managers */ = {
+			isa = PBXGroup;
+			children = (
+				A2000023 /* FirebaseManager.swift */,
+				A2000024 /* RouteManager.swift */,
+				A2000025 /* TripManager.swift */,
+			);
+			path = Managers;
 			sourceTree = "<group>";
 		};
 		A5000012 /* Settings */ = {
@@ -258,6 +293,15 @@
 				A1000012 /* FetchCalculator.swift in Sources */,
 				A1000013 /* RouteListView.swift in Sources */,
 				A1000014 /* TripHistoryView.swift in Sources */,
+				A1000016 /* Constants.swift in Sources */,
+				A1000017 /* Extensions.swift in Sources */,
+				A1000018 /* NauticalMapView.swift in Sources */,
+				A1000019 /* MapOverlays.swift in Sources */,
+				A1000020 /* DeparturePickerView.swift in Sources */,
+				A1000021 /* TripTrackingView.swift in Sources */,
+				A1000022 /* FirebaseManager.swift in Sources */,
+				A1000023 /* RouteManager.swift in Sources */,
+				A1000024 /* TripManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
