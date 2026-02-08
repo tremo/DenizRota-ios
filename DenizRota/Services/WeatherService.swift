@@ -12,8 +12,8 @@ actor WeatherService {
 
     // MARK: - Public API
 
-    func fetchWeather(for coordinate: CLLocationCoordinate2D) async throws -> WeatherData {
-        let cacheKey = cacheKey(for: coordinate)
+    func fetchWeather(for coordinate: CLLocationCoordinate2D, date: Date = Date()) async throws -> WeatherData {
+        let cacheKey = cacheKey(for: coordinate, date: date)
 
         // Cache kontrolü
         if let cached = cache[cacheKey], !cached.isExpired {
@@ -27,26 +27,30 @@ actor WeatherService {
         let weather = try await weatherTask
         let marine = try? await marineTask // Marine opsiyonel
 
+        // Hedef saate en yakın veriyi bul
+        let weatherValues = weather.valuesForDate(date)
+        let marineValues = marine?.valuesForDate(date)
+
         // Fetch hesaplama (kıyıya yakınsa dalga düşür)
         let fetchDistance = FetchCalculator.shared.calculateFetch(
             lat: coordinate.latitude,
             lng: coordinate.longitude,
-            windDirection: weather.windDirection
+            windDirection: weatherValues.windDirection
         )
 
         let adjustedWaveHeight = FetchCalculator.shared.adjustWaveHeight(
-            marine?.waveHeight ?? 0,
+            marineValues?.waveHeight ?? 0,
             fetchKm: fetchDistance
         )
 
         let data = WeatherData(
-            windSpeed: weather.windSpeed,
-            windDirection: weather.windDirection,
-            windGusts: weather.windGusts,
-            temperature: weather.temperature,
+            windSpeed: weatherValues.windSpeed,
+            windDirection: weatherValues.windDirection,
+            windGusts: weatherValues.windGusts,
+            temperature: weatherValues.temperature,
             waveHeight: adjustedWaveHeight,
-            waveDirection: marine?.waveDirection ?? 0,
-            wavePeriod: marine?.wavePeriod ?? 0,
+            waveDirection: marineValues?.waveDirection ?? 0,
+            wavePeriod: marineValues?.wavePeriod ?? 0,
             fetchDistance: fetchDistance
         )
 
@@ -63,7 +67,8 @@ actor WeatherService {
         components.queryItems = [
             URLQueryItem(name: "latitude", value: String(coordinate.latitude)),
             URLQueryItem(name: "longitude", value: String(coordinate.longitude)),
-            URLQueryItem(name: "current", value: "temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m"),
+            URLQueryItem(name: "hourly", value: "temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m"),
+            URLQueryItem(name: "forecast_days", value: "3"),
             URLQueryItem(name: "timezone", value: "auto")
         ]
 
@@ -75,7 +80,8 @@ actor WeatherService {
         components.queryItems = [
             URLQueryItem(name: "latitude", value: String(coordinate.latitude)),
             URLQueryItem(name: "longitude", value: String(coordinate.longitude)),
-            URLQueryItem(name: "current", value: "wave_height,wave_direction,wave_period"),
+            URLQueryItem(name: "hourly", value: "wave_height,wave_direction,wave_period"),
+            URLQueryItem(name: "forecast_days", value: "3"),
             URLQueryItem(name: "timezone", value: "auto")
         ]
 
@@ -108,11 +114,14 @@ actor WeatherService {
 
     // MARK: - Cache
 
-    private func cacheKey(for coordinate: CLLocationCoordinate2D) -> String {
-        // 0.01 derece grid (yaklaşık 1km)
+    private func cacheKey(for coordinate: CLLocationCoordinate2D, date: Date) -> String {
+        // 0.01 derece grid (yaklaşık 1km) + saat bilgisi
         let lat = (coordinate.latitude * 100).rounded() / 100
         let lng = (coordinate.longitude * 100).rounded() / 100
-        return "\(lat),\(lng)"
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: date)
+        let day = calendar.component(.day, from: date)
+        return "\(lat),\(lng),\(day),\(hour)"
     }
 
     func clearCache() {
@@ -164,36 +173,106 @@ private struct CacheEntry {
     }
 }
 
+// MARK: - Hourly Value Types
+
+struct HourlyWeatherValues {
+    let windSpeed: Double
+    let windDirection: Double
+    let windGusts: Double
+    let temperature: Double
+}
+
+struct HourlyMarineValues {
+    let waveHeight: Double
+    let waveDirection: Double
+    let wavePeriod: Double
+}
+
 // MARK: - API Response Types
 
 private struct WeatherAPIResponse: Decodable {
-    let current: CurrentWeather
+    let hourly: HourlyWeather
 
-    struct CurrentWeather: Decodable {
-        let temperature_2m: Double
-        let wind_speed_10m: Double
-        let wind_direction_10m: Double
-        let wind_gusts_10m: Double
+    struct HourlyWeather: Decodable {
+        let time: [String]
+        let temperature_2m: [Double]
+        let wind_speed_10m: [Double]
+        let wind_direction_10m: [Double]
+        let wind_gusts_10m: [Double]
     }
 
-    var temperature: Double { current.temperature_2m }
-    var windSpeed: Double { current.wind_speed_10m }
-    var windDirection: Double { current.wind_direction_10m }
-    var windGusts: Double { current.wind_gusts_10m }
+    func valuesForDate(_ date: Date) -> HourlyWeatherValues {
+        let index = closestIndex(times: hourly.time, to: date)
+        return HourlyWeatherValues(
+            windSpeed: hourly.wind_speed_10m[safe: index] ?? 0,
+            windDirection: hourly.wind_direction_10m[safe: index] ?? 0,
+            windGusts: hourly.wind_gusts_10m[safe: index] ?? 0,
+            temperature: hourly.temperature_2m[safe: index] ?? 0
+        )
+    }
 }
 
 private struct MarineAPIResponse: Decodable {
-    let current: CurrentMarine
+    let hourly: HourlyMarine
 
-    struct CurrentMarine: Decodable {
-        let wave_height: Double?
-        let wave_direction: Double?
-        let wave_period: Double?
+    struct HourlyMarine: Decodable {
+        let time: [String]
+        let wave_height: [Double?]
+        let wave_direction: [Double?]
+        let wave_period: [Double?]
     }
 
-    var waveHeight: Double { current.wave_height ?? 0 }
-    var waveDirection: Double { current.wave_direction ?? 0 }
-    var wavePeriod: Double { current.wave_period ?? 0 }
+    func valuesForDate(_ date: Date) -> HourlyMarineValues {
+        let index = closestIndex(times: hourly.time, to: date)
+        return HourlyMarineValues(
+            waveHeight: hourly.wave_height[safe: index].flatMap { $0 } ?? 0,
+            waveDirection: hourly.wave_direction[safe: index].flatMap { $0 } ?? 0,
+            wavePeriod: hourly.wave_period[safe: index].flatMap { $0 } ?? 0
+        )
+    }
+}
+
+// MARK: - Helpers
+
+/// ISO 8601 zaman dizisinden hedef tarihe en yakin index'i bul
+private func closestIndex(times: [String], to date: Date) -> Int {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withFullDate, .withTime, .withDashSeparatorInDate, .withColonSeparatorInTime]
+
+    let calendar = Calendar.current
+    let targetHour = calendar.component(.hour, from: date)
+    let targetDay = calendar.ordinality(of: .day, in: .year, for: date) ?? 0
+
+    var bestIndex = 0
+    var bestDiff = Int.max
+
+    for (i, timeStr) in times.enumerated() {
+        // Format: "2024-01-15T14:00"
+        if let parsed = formatter.date(from: timeStr + ":00Z") ?? parseISO(timeStr) {
+            let h = calendar.component(.hour, from: parsed)
+            let d = calendar.ordinality(of: .day, in: .year, for: parsed) ?? 0
+            let diff = abs((d - targetDay) * 24 + (h - targetHour))
+            if diff < bestDiff {
+                bestDiff = diff
+                bestIndex = i
+            }
+        }
+    }
+    return bestIndex
+}
+
+private func parseISO(_ str: String) -> Date? {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
+    formatter.timeZone = TimeZone.current
+    return formatter.date(from: str)
+}
+
+// Safe array subscript
+extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
 }
 
 enum WeatherError: Error {
