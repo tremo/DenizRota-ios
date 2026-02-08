@@ -47,6 +47,28 @@ class WaypointAnnotation: NSObject, MKAnnotation {
     }
 }
 
+class CoveAnnotation: NSObject, MKAnnotation {
+    let cove: Cove
+    let shelterLevel: ShelterLevel
+
+    var coordinate: CLLocationCoordinate2D {
+        cove.coordinate
+    }
+
+    var title: String? {
+        cove.name
+    }
+
+    var subtitle: String? {
+        shelterLevel.shortDescription
+    }
+
+    init(cove: Cove, shelterLevel: ShelterLevel) {
+        self.cove = cove
+        self.shelterLevel = shelterLevel
+    }
+}
+
 class UserLocationAnnotation: NSObject, MKAnnotation {
     dynamic var coordinate: CLLocationCoordinate2D
 
@@ -69,6 +91,7 @@ struct NauticalMapView: UIViewRepresentable {
     var userLocation: CLLocation?
     var activeRoute: Route?
     var isRouteMode: Bool
+    var shelterResults: [CoveShelterResult]
 
     var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
     var onWaypointTapped: ((Waypoint) -> Void)?
@@ -125,6 +148,7 @@ struct NauticalMapView: UIViewRepresentable {
         updateOpenSeaMapOverlay(mapView)
         updateRegion(mapView, context: context)
         updateAnnotations(mapView)
+        updateCoveAnnotations(mapView)
         updateRouteOverlay(mapView)
     }
 
@@ -223,6 +247,43 @@ struct NauticalMapView: UIViewRepresentable {
         }
     }
 
+    // MARK: - Cove Annotations
+
+    private func updateCoveAnnotations(_ mapView: MKMapView) {
+        let existingCoveAnnotations = mapView.annotations.compactMap { $0 as? CoveAnnotation }
+
+        if shelterResults.isEmpty {
+            // Koy analizi kapalı, tüm cove annotation'larını kaldır
+            existingCoveAnnotations.forEach { mapView.removeAnnotation($0) }
+            return
+        }
+
+        let existingByName = Dictionary(uniqueKeysWithValues: existingCoveAnnotations.map { ($0.cove.name, $0) })
+        let currentNames = Set(shelterResults.map(\.cove.name))
+
+        // Artık olmayan annotation'ları kaldır
+        for annotation in existingCoveAnnotations {
+            if !currentNames.contains(annotation.cove.name) {
+                mapView.removeAnnotation(annotation)
+            }
+        }
+
+        // Yeni annotation ekle veya güncelle
+        for result in shelterResults {
+            if let existing = existingByName[result.cove.name] {
+                // Shelter level değişmişse yeniden oluştur
+                if existing.shelterLevel != result.shelterLevel {
+                    mapView.removeAnnotation(existing)
+                    mapView.addAnnotation(CoveAnnotation(cove: result.cove, shelterLevel: result.shelterLevel))
+                } else if let view = mapView.view(for: existing) {
+                    view.image = Self.renderCoveImage(shelterLevel: result.shelterLevel)
+                }
+            } else {
+                mapView.addAnnotation(CoveAnnotation(cove: result.cove, shelterLevel: result.shelterLevel))
+            }
+        }
+    }
+
     // MARK: - Route Overlay
 
     private func updateRouteOverlay(_ mapView: MKMapView) {
@@ -275,6 +336,50 @@ struct NauticalMapView: UIViewRepresentable {
                 )
                 text.draw(at: textPoint, withAttributes: attrs)
             }
+        }
+    }
+
+    static func renderCoveImage(shelterLevel: ShelterLevel) -> UIImage {
+        let size: CGFloat = 28
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+        return renderer.image { ctx in
+            let color: UIColor
+            switch shelterLevel {
+            case .excellent: color = .systemGreen
+            case .good: color = .systemBlue
+            case .moderate: color = .systemOrange
+            case .poor: color = .systemRed
+            }
+
+            // Dış çember
+            ctx.cgContext.setShadow(
+                offset: CGSize(width: 0, height: 1),
+                blur: 2,
+                color: UIColor.black.withAlphaComponent(0.3).cgColor
+            )
+            color.setFill()
+            ctx.cgContext.fillEllipse(in: CGRect(x: 0, y: 0, width: size, height: size))
+
+            ctx.cgContext.setShadow(offset: .zero, blur: 0)
+
+            // Çapa ikonu (basit anchor şekli)
+            UIColor.white.setFill()
+            let centerX = size / 2
+            let centerY = size / 2
+            // Dikey çizgi
+            let barWidth: CGFloat = 2.5
+            let barHeight: CGFloat = 12
+            ctx.cgContext.fill(CGRect(x: centerX - barWidth / 2, y: centerY - barHeight / 2, width: barWidth, height: barHeight))
+            // Yatay çizgi (üst)
+            let crossWidth: CGFloat = 10
+            ctx.cgContext.fill(CGRect(x: centerX - crossWidth / 2, y: centerY - barHeight / 2, width: crossWidth, height: barWidth))
+            // Alt yarım daire
+            let arcRadius: CGFloat = 5
+            let arcRect = CGRect(x: centerX - arcRadius, y: centerY + barHeight / 2 - arcRadius, width: arcRadius * 2, height: arcRadius * 2)
+            UIColor.white.setStroke()
+            ctx.cgContext.setLineWidth(2)
+            ctx.cgContext.addArc(center: CGPoint(x: centerX, y: centerY + barHeight / 2 - arcRadius), radius: arcRadius, startAngle: 0, endAngle: .pi, clockwise: false)
+            ctx.cgContext.strokePath()
         }
     }
 
@@ -368,6 +473,19 @@ struct NauticalMapView: UIViewRepresentable {
                     riskLevel: waypointAnnotation.waypoint.riskLevel,
                     isLoading: waypointAnnotation.waypoint.isLoading
                 )
+                view.centerOffset = CGPoint(x: 0, y: 0)
+
+                return view
+            }
+
+            if let coveAnnotation = annotation as? CoveAnnotation {
+                let identifier = "CovePin"
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) ??
+                    MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
+
+                view.annotation = annotation
+                view.canShowCallout = true
+                view.image = NauticalMapView.renderCoveImage(shelterLevel: coveAnnotation.shelterLevel)
                 view.centerOffset = CGPoint(x: 0, y: 0)
 
                 return view
