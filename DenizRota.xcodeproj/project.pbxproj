@@ -33,6 +33,7 @@
 		A1000024 /* TripManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000025 /* TripManager.swift */; };
 		A1000025 /* TimelineBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000026 /* TimelineBarView.swift */; };
 		A1000026 /* ShelterAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000027 /* ShelterAnalyzer.swift */; };
+		A1000027 /* OverpassService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000028 /* OverpassService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -63,6 +64,7 @@
 		A2000025 /* TripManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripManager.swift; sourceTree = "<group>"; };
 		A2000026 /* TimelineBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineBarView.swift; sourceTree = "<group>"; };
 		A2000027 /* ShelterAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShelterAnalyzer.swift; sourceTree = "<group>"; };
+		A2000028 /* OverpassService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverpassService.swift; sourceTree = "<group>"; };
 		A3000000 /* DenizRota.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DenizRota.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -137,6 +139,7 @@
 				A2000010 /* NotificationManager.swift */,
 				A2000011 /* WeatherService.swift */,
 				A2000027 /* ShelterAnalyzer.swift */,
+				A2000028 /* OverpassService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -310,6 +313,7 @@
 				A1000024 /* TripManager.swift in Sources */,
 				A1000025 /* TimelineBarView.swift in Sources */,
 				A1000026 /* ShelterAnalyzer.swift in Sources */,
+				A1000027 /* OverpassService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
