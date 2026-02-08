@@ -27,9 +27,9 @@ struct MapView: View {
     @State private var showingSaveRouteAlert = false
     @State private var newRouteName = ""
 
-    // Seyir zamani secici
-    @State private var showingDeparturePicker = false
-    @State private var scheduledDepartureDate = Date()
+    // Zaman cubugu (Windy-tarzi)
+    @State private var showTimelineBar = false
+    @State private var selectedForecastDate = Date()
 
     // Hava durumu
     @State private var isLoadingWeather = false
@@ -83,6 +83,7 @@ struct MapView: View {
 
                     Spacer()
 
+                    VStack(spacing: 8) {
                     // Harita tipi secici - Sag ust
                     Menu {
                         ForEach(MapStyleOption.allCases) { style in
@@ -106,6 +107,20 @@ struct MapView: View {
                             .clipShape(Circle())
                             .shadow(radius: 2)
                     }
+                    // Zaman cubugu toggle - Sag ust
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showTimelineBar.toggle()
+                        }
+                    } label: {
+                        Image(systemName: showTimelineBar ? "calendar.circle.fill" : "calendar.circle")
+                            .font(.title3)
+                            .padding(10)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Circle())
+                            .shadow(radius: 2)
+                    }
+                    }
                     .padding(.trailing, 16)
                     .padding(.top, 8)
                 }
@@ -118,6 +133,18 @@ struct MapView: View {
                 }
 
                 Spacer()
+
+                // Zaman cubugu (Windy-tarzi)
+                if showTimelineBar {
+                    TimelineBarView(
+                        selectedDate: $selectedForecastDate,
+                        onDateChanged: { date in
+                            onForecastDateChanged(date)
+                        }
+                    )
+                    .padding(.horizontal, 16)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
 
                 // Alt butonlar
                 HStack(spacing: 16) {
@@ -232,8 +259,7 @@ struct MapView: View {
                         if locationManager.isTracking {
                             stopTrip()
                         } else {
-                            scheduledDepartureDate = Date()
-                            showingDeparturePicker = true
+                            startTrip()
                         }
                     } label: {
                         Image(systemName: locationManager.isTracking ? "stop.fill" : "play.fill")
@@ -294,18 +320,6 @@ struct MapView: View {
             }
         } message: {
             Text("Rotaniz icin bir isim girin")
-        }
-        .sheet(isPresented: $showingDeparturePicker) {
-            DeparturePickerView(
-                selectedDate: $scheduledDepartureDate,
-                onStartNow: {
-                    startTrip(at: Date())
-                },
-                onStartScheduled: { date in
-                    startTrip(at: date)
-                }
-            )
-            .presentationDetents([.large])
         }
         .sheet(isPresented: $showingShelterSheet) {
             ShelterListSheet(results: shelterResults)
@@ -436,15 +450,16 @@ struct MapView: View {
         guard let route = activeRoute else { return }
 
         isLoadingWeather = true
+        let forecastDate = selectedForecastDate
 
         for waypoint in route.waypoints {
             waypoint.isLoading = true
         }
 
-        // Her waypoint icin hava durumu
+        // Her waypoint icin hava durumu (secilen tarihe gore)
         for waypoint in route.waypoints {
             do {
-                let weather = try await WeatherService.shared.fetchWeather(for: waypoint.coordinate)
+                let weather = try await WeatherService.shared.fetchWeather(for: waypoint.coordinate, date: forecastDate)
 
                 await MainActor.run {
                     waypoint.windSpeed = weather.windSpeed
@@ -469,6 +484,19 @@ struct MapView: View {
         lastWeatherUpdate = Date()
     }
 
+    /// Zaman cubugu degistiginde cagirilir - hava durumu ve korunak analizini gunceller
+    private func onForecastDateChanged(_ date: Date) {
+        // Aktif rota varsa hava durumunu guncelle
+        if let route = activeRoute, !route.waypoints.isEmpty {
+            Task { await loadWeatherForRoute() }
+        }
+
+        // Korunak modu aktifse yeniden analiz et
+        if isShelterModeActive {
+            refreshShelterAnalysis()
+        }
+    }
+
     // MARK: - Shelter Analysis
 
     private func toggleShelterMode() {
@@ -479,6 +507,11 @@ struct MapView: View {
             return
         }
 
+        refreshShelterAnalysis()
+    }
+
+    /// Korunak analizini secilen tarihe gore yeniden calistir
+    private func refreshShelterAnalysis() {
         // Rüzgar verisini al - aktif rotadaki waypoint'lerden veya mevcut konumdan
         var windDirection: Double?
         var windSpeed: Double?
@@ -494,14 +527,13 @@ struct MapView: View {
             }
         }
 
-        // Rüzgar verisi yoksa API'den çek
+        // Rüzgar verisi yoksa API'den çek (secilen tarih ile)
         if windDirection == nil {
             Task {
                 do {
-                    // Haritanın merkezindeki veya kullanıcı konumundaki hava durumunu al
                     let coordinate = locationManager.currentLocation?.coordinate ??
                         CLLocationCoordinate2D(latitude: mapRegion.center.latitude, longitude: mapRegion.center.longitude)
-                    let weather = try await WeatherService.shared.fetchWeather(for: coordinate)
+                    let weather = try await WeatherService.shared.fetchWeather(for: coordinate, date: selectedForecastDate)
                     await MainActor.run {
                         shelterResults = ShelterAnalyzer.shared.analyzeAllCoves(
                             windDirection: weather.windDirection,
@@ -510,7 +542,6 @@ struct MapView: View {
                         isShelterModeActive = true
                     }
                 } catch {
-                    // Hava durumu alınamadıysa varsayılan kuzey rüzgarı ile göster
                     await MainActor.run {
                         shelterResults = ShelterAnalyzer.shared.analyzeAllCoves(
                             windDirection: 0,
@@ -533,17 +564,9 @@ struct MapView: View {
 
     // MARK: - Trip
 
-    private func startTrip(at departureDate: Date) {
+    private func startTrip() {
         guard let route = activeRoute else { return }
-
         let waypoints = route.sortedWaypoints
-
-        // Gelecek bir tarih secildiyse bilgi mesaji goster
-        if departureDate > Date().addingMinutes(1) {
-            print("Seyir \(departureDate.dateTimeStringTR) icin planlandi")
-            // Not: Gelecek surumde zamanlama sistemi eklenebilir
-        }
-
         locationManager.startTracking(waypoints: waypoints)
     }
 
