@@ -37,6 +37,9 @@ struct MapView: View {
     @State private var shelterResults: [CoveShelterResult] = []
     @State private var showingShelterSheet = false
     @State private var isShelterModeActive = false
+    @State private var isLoadingShelter = false
+    @State private var visibleRegion: MKCoordinateRegion?
+    @State private var shelterFetchTask: Task<Void, Never>?
 
     // Otomatik hava durumu guncelleme timer'i (15 dakika)
     private let weatherRefreshTimer = Timer.publish(
@@ -61,6 +64,9 @@ struct MapView: View {
                 },
                 onDeleteWaypoint: { waypoint in
                     deleteWaypoint(waypoint)
+                },
+                onRegionChanged: { region in
+                    onMapRegionChanged(region)
                 }
             )
             .ignoresSafeArea(edges: .top)
@@ -178,13 +184,22 @@ struct MapView: View {
                     Button {
                         toggleShelterMode()
                     } label: {
-                        Image(systemName: "shield.checkered")
-                            .font(.title2)
-                            .padding(12)
-                            .background(isShelterModeActive ? .green : Color(.systemBackground))
-                            .foregroundStyle(isShelterModeActive ? .white : .teal)
-                            .clipShape(Circle())
-                            .shadow(radius: 4)
+                        ZStack {
+                            Image(systemName: "shield.checkered")
+                                .font(.title2)
+                                .opacity(isLoadingShelter ? 0.3 : 1.0)
+
+                            if isLoadingShelter {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                    .tint(isShelterModeActive ? .white : .teal)
+                            }
+                        }
+                        .padding(12)
+                        .background(isShelterModeActive ? .green : Color(.systemBackground))
+                        .foregroundStyle(isShelterModeActive ? .white : .teal)
+                        .clipShape(Circle())
+                        .shadow(radius: 4)
                     }
 
                     // Korunakli koylar listesi (aktifken)
@@ -296,7 +311,7 @@ struct MapView: View {
             autoRefreshWeather()
         }
         .onAppear {
-            // Ilk yuklemede hava durumunu kontrol et
+            visibleRegion = mapRegion
             autoRefreshWeather()
         }
         // Kayitli rotadan secilen rotayi haritada goster
@@ -469,62 +484,103 @@ struct MapView: View {
             // Kapat
             isShelterModeActive = false
             shelterResults = []
+            shelterFetchTask?.cancel()
+            isLoadingShelter = false
             return
         }
 
         refreshShelterAnalysis()
     }
 
-    /// Korunak analizini secilen tarihe gore yeniden calistir
-    private func refreshShelterAnalysis() {
-        // Rüzgar verisini al - aktif rotadaki waypoint'lerden veya mevcut konumdan
-        var windDirection: Double?
-        var windSpeed: Double?
+    /// Harita bolgesi degistiginde cagirilir
+    private func onMapRegionChanged(_ region: MKCoordinateRegion) {
+        visibleRegion = region
 
-        // Önce aktif rotadaki waypoint'lerden rüzgar verisini dene
+        guard isShelterModeActive else { return }
+
+        // Debounce: kullanici haritayi kaydirmayi birakinca 1 saniye bekle
+        shelterFetchTask?.cancel()
+        shelterFetchTask = Task {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            await fetchAndDisplayShelters()
+        }
+    }
+
+    /// Korunak analizini secilen tarihe ve gorunen bolgeye gore calistir
+    private func refreshShelterAnalysis() {
+        shelterFetchTask?.cancel()
+        shelterFetchTask = Task {
+            await fetchAndDisplayShelters()
+            await MainActor.run {
+                isShelterModeActive = true
+            }
+        }
+    }
+
+    /// Overpass API'den koy verisi cekip shelter analizi yap
+    private func fetchAndDisplayShelters() async {
+        await MainActor.run { isLoadingShelter = true }
+
+        do {
+            // 1. Gorunen bolgedeki koylari Overpass API'den cek
+            let region = visibleRegion ?? mapRegion
+            let coves = try await OverpassService.shared.fetchCoves(region: region)
+
+            guard !Task.isCancelled else { return }
+
+            // 2. Ruzgar verisini al
+            let windData = await getWindData()
+
+            guard !Task.isCancelled else { return }
+
+            // 3. Analiz et
+            let results = ShelterAnalyzer.shared.analyzeCoves(
+                coves,
+                windDirection: windData.direction,
+                windSpeed: windData.speed
+            )
+
+            await MainActor.run {
+                shelterResults = results
+                isLoadingShelter = false
+            }
+        } catch {
+            // API hatasi - statik CoveData'ya fallback
+            let windData = await getWindData()
+            let results = ShelterAnalyzer.shared.analyzeCoves(
+                CoveData.all,
+                windDirection: windData.direction,
+                windSpeed: windData.speed
+            )
+
+            await MainActor.run {
+                shelterResults = results
+                isLoadingShelter = false
+            }
+        }
+    }
+
+    /// Ruzgar verisini al: rotadan, API'den veya varsayilan
+    private func getWindData() async -> (direction: Double, speed: Double) {
+        // Once aktif rotadaki waypoint'lerden dene
         if let route = activeRoute {
             for wp in route.waypoints {
                 if let dir = wp.windDirection, let spd = wp.windSpeed {
-                    windDirection = dir
-                    windSpeed = spd
-                    break
+                    return (dir, spd)
                 }
             }
         }
 
-        // Rüzgar verisi yoksa API'den çek (secilen tarih ile)
-        if windDirection == nil {
-            Task {
-                do {
-                    let coordinate = locationManager.currentLocation?.coordinate ??
-                        CLLocationCoordinate2D(latitude: mapRegion.center.latitude, longitude: mapRegion.center.longitude)
-                    let weather = try await WeatherService.shared.fetchWeather(for: coordinate, date: selectedForecastDate)
-                    await MainActor.run {
-                        shelterResults = ShelterAnalyzer.shared.analyzeAllCoves(
-                            windDirection: weather.windDirection,
-                            windSpeed: weather.windSpeed
-                        )
-                        isShelterModeActive = true
-                    }
-                } catch {
-                    await MainActor.run {
-                        shelterResults = ShelterAnalyzer.shared.analyzeAllCoves(
-                            windDirection: 0,
-                            windSpeed: 15
-                        )
-                        isShelterModeActive = true
-                    }
-                }
-            }
-            return
+        // API'den cek
+        do {
+            let coordinate = locationManager.currentLocation?.coordinate ??
+                CLLocationCoordinate2D(latitude: mapRegion.center.latitude, longitude: mapRegion.center.longitude)
+            let weather = try await WeatherService.shared.fetchWeather(for: coordinate, date: selectedForecastDate)
+            return (weather.windDirection, weather.windSpeed)
+        } catch {
+            return (0, 15) // Varsayilan fallback
         }
-
-        // Rüzgar verisi varsa doğrudan analiz et
-        shelterResults = ShelterAnalyzer.shared.analyzeAllCoves(
-            windDirection: windDirection!,
-            windSpeed: windSpeed!
-        )
-        isShelterModeActive = true
     }
 
     // MARK: - Trip

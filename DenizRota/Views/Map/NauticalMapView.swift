@@ -95,6 +95,7 @@ struct NauticalMapView: UIViewRepresentable {
 
     var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
     var onDeleteWaypoint: ((Waypoint) -> Void)?
+    var onRegionChanged: ((MKCoordinateRegion) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -258,20 +259,20 @@ struct NauticalMapView: UIViewRepresentable {
             return
         }
 
-        let existingByName = Dictionary(uniqueKeysWithValues: existingCoveAnnotations.map { ($0.cove.name, $0) })
-        let currentNames = Set(shelterResults.map(\.cove.name))
+        let existingByKey = Dictionary(uniqueKeysWithValues: existingCoveAnnotations.map { ($0.cove.stableId, $0) })
+        let currentKeys = Set(shelterResults.map(\.cove.stableId))
 
-        // Artık olmayan annotation'ları kaldır
+        // Artik olmayan annotation'lari kaldir
         for annotation in existingCoveAnnotations {
-            if !currentNames.contains(annotation.cove.name) {
+            if !currentKeys.contains(annotation.cove.stableId) {
                 mapView.removeAnnotation(annotation)
             }
         }
 
-        // Yeni annotation ekle veya güncelle
+        // Yeni annotation ekle veya guncelle
         for result in shelterResults {
-            if let existing = existingByName[result.cove.name] {
-                // Shelter level değişmişse yeniden oluştur
+            if let existing = existingByKey[result.cove.stableId] {
+                // Shelter level degismisse yeniden olustur
                 if existing.shelterLevel != result.shelterLevel {
                     mapView.removeAnnotation(existing)
                     mapView.addAnnotation(CoveAnnotation(cove: result.cove, shelterLevel: result.shelterLevel))
@@ -529,6 +530,7 @@ struct NauticalMapView: UIViewRepresentable {
                 isProgrammaticRegionChange = false
             }
             updateCalloutPosition(in: mapView)
+            parent?.onRegionChanged?(mapView.region)
         }
 
         // MARK: - Callout Management

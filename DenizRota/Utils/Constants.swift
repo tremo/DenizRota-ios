@@ -215,6 +215,11 @@ struct Cove: Identifiable {
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
+
+    /// Koordinat bazli sabit ID (annotation eslestirme icin)
+    var stableId: String {
+        String(format: "%.4f,%.4f", latitude, longitude)
+    }
 }
 
 /// Datça-Marmaris-Bozburun bölgesi bilinen koy ve demirleme noktaları

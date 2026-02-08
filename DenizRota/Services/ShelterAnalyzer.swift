@@ -34,9 +34,9 @@ struct ShelterAnalyzer {
         }
     }
 
-    /// Tüm koyları analiz edip sonuçları döndür (shelter seviyesine göre sıralı)
-    func analyzeAllCoves(windDirection: Double, windSpeed: Double) -> [CoveShelterResult] {
-        CoveData.all.map { cove in
+    /// Verilen koylari analiz edip sonuclari dondur (shelter seviyesine gore sirali)
+    func analyzeCoves(_ coves: [Cove], windDirection: Double, windSpeed: Double) -> [CoveShelterResult] {
+        coves.map { cove in
             let level = analyzeShelter(cove: cove, windDirection: windDirection, windSpeed: windSpeed)
             return CoveShelterResult(cove: cove, shelterLevel: level, windDirection: windDirection, windSpeed: windSpeed)
         }
