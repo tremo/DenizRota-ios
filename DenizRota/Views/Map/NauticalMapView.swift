@@ -94,7 +94,7 @@ struct NauticalMapView: UIViewRepresentable {
     var shelterResults: [CoveShelterResult]
 
     var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
-    var onWaypointTapped: ((Waypoint) -> Void)?
+    var onDeleteWaypoint: ((Waypoint) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -509,15 +509,184 @@ struct NauticalMapView: UIViewRepresentable {
 
         func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
             if let waypointAnnotation = annotation as? WaypointAnnotation {
-                parent?.onWaypointTapped?(waypointAnnotation.waypoint)
-                mapView.deselectAnnotation(annotation, animated: false)
+                showCallout(for: waypointAnnotation, in: mapView)
             }
+        }
+
+        func mapView(_ mapView: MKMapView, didDeselect annotation: MKAnnotation) {
+            if annotation is WaypointAnnotation {
+                removeCallout()
+            }
+        }
+
+        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            updateCalloutPosition(in: mapView)
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             if isProgrammaticRegionChange {
                 isProgrammaticRegionChange = false
             }
+            updateCalloutPosition(in: mapView)
+        }
+    }
+}
+
+// MARK: - Callout Bubble Shape
+
+struct CalloutBubbleShape: Shape {
+    var cornerRadius: CGFloat = 10
+    var triangleHeight: CGFloat = 8
+    var triangleWidth: CGFloat = 14
+
+    func path(in rect: CGRect) -> Path {
+        let cardBottom = rect.height - triangleHeight
+        var path = Path()
+
+        path.move(to: CGPoint(x: 0, y: cornerRadius))
+        path.addArc(tangent1End: CGPoint(x: 0, y: 0),
+                     tangent2End: CGPoint(x: cornerRadius, y: 0),
+                     radius: cornerRadius)
+        path.addLine(to: CGPoint(x: rect.width - cornerRadius, y: 0))
+        path.addArc(tangent1End: CGPoint(x: rect.width, y: 0),
+                     tangent2End: CGPoint(x: rect.width, y: cornerRadius),
+                     radius: cornerRadius)
+        path.addLine(to: CGPoint(x: rect.width, y: cardBottom - cornerRadius))
+        path.addArc(tangent1End: CGPoint(x: rect.width, y: cardBottom),
+                     tangent2End: CGPoint(x: rect.width - cornerRadius, y: cardBottom),
+                     radius: cornerRadius)
+        path.addLine(to: CGPoint(x: rect.midX + triangleWidth / 2, y: cardBottom))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.height))
+        path.addLine(to: CGPoint(x: rect.midX - triangleWidth / 2, y: cardBottom))
+        path.addLine(to: CGPoint(x: cornerRadius, y: cardBottom))
+        path.addArc(tangent1End: CGPoint(x: 0, y: cardBottom),
+                     tangent2End: CGPoint(x: 0, y: cardBottom - cornerRadius),
+                     radius: cornerRadius)
+        path.closeSubpath()
+
+        return path
+    }
+}
+
+// MARK: - Waypoint Callout Content
+
+struct WaypointCalloutContent: View {
+    let waypoint: Waypoint
+    let onClose: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 5) {
+                // Header: risk dot, name, buttons
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(riskColor)
+                        .frame(width: 8, height: 8)
+                    Text(waypoint.name ?? "Nokta \(waypoint.orderIndex + 1)")
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    Spacer()
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.red.opacity(0.6))
+                    }
+                    Button(action: onClose) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+
+                if waypoint.windSpeed != nil {
+                    Divider()
+
+                    // Row 1: Wind + Temperature
+                    HStack(spacing: 0) {
+                        weatherItem(
+                            icon: "wind",
+                            value: String(format: "%.0f", waypoint.windSpeed ?? 0),
+                            unit: "km/h",
+                            extra: waypoint.windDirection?.windDirectionText,
+                            tint: Color.windColor(for: waypoint.windSpeed ?? 0)
+                        )
+                        weatherItem(
+                            icon: "thermometer.medium",
+                            value: waypoint.temperature.map { "\(Int($0))" } ?? "-",
+                            unit: "°C",
+                            extra: nil,
+                            tint: .orange
+                        )
+                    }
+
+                    // Row 2: Wave + Period
+                    HStack(spacing: 0) {
+                        weatherItem(
+                            icon: "water.waves",
+                            value: waypoint.waveHeight.map { String(format: "%.1f", $0) } ?? "-",
+                            unit: "m",
+                            extra: nil,
+                            tint: Color.waveColor(for: waypoint.waveHeight ?? 0)
+                        )
+                        weatherItem(
+                            icon: "timer",
+                            value: (waypoint.wavePeriod ?? 0) > 0
+                                ? String(format: "%.1f", waypoint.wavePeriod!) : "-",
+                            unit: "sn",
+                            extra: nil,
+                            tint: .cyan
+                        )
+                    }
+                } else if waypoint.isLoading {
+                    Divider()
+                    HStack(spacing: 4) {
+                        ProgressView().scaleEffect(0.5)
+                        Text("Yukleniyor...")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(height: 24)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+
+            // Space for triangle
+            Spacer().frame(height: 8)
+        }
+        .frame(width: 200)
+        .background(.regularMaterial)
+        .clipShape(CalloutBubbleShape())
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
+    }
+
+    @ViewBuilder
+    private func weatherItem(icon: String, value: String, unit: String, extra: String?, tint: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+                .foregroundStyle(tint)
+            Text(value)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+            Text(unit)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+            if let extra = extra {
+                Text(extra)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var riskColor: Color {
+        switch waypoint.riskLevel {
+        case .green: return .green
+        case .yellow: return .orange
+        case .red: return .red
+        case .unknown: return .gray
         }
     }
 }
