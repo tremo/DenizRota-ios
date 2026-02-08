@@ -375,7 +375,6 @@ struct NauticalMapView: UIViewRepresentable {
             ctx.cgContext.fill(CGRect(x: centerX - crossWidth / 2, y: centerY - barHeight / 2, width: crossWidth, height: barWidth))
             // Alt yarım daire
             let arcRadius: CGFloat = 5
-            let arcRect = CGRect(x: centerX - arcRadius, y: centerY + barHeight / 2 - arcRadius, width: arcRadius * 2, height: arcRadius * 2)
             UIColor.white.setStroke()
             ctx.cgContext.setLineWidth(2)
             ctx.cgContext.addArc(center: CGPoint(x: centerX, y: centerY + barHeight / 2 - arcRadius), radius: arcRadius, startAngle: 0, endAngle: .pi, clockwise: false)
@@ -408,6 +407,8 @@ struct NauticalMapView: UIViewRepresentable {
         var lastRegionCenter = CLLocationCoordinate2D(latitude: 0, longitude: 0)
         var lastRegionSpan = MKCoordinateSpan(latitudeDelta: 0, longitudeDelta: 0)
         var isProgrammaticRegionChange = false
+        var calloutHostingController: UIHostingController<WaypointCalloutContent>?
+        var selectedWaypointAnnotation: WaypointAnnotation?
 
         // MARK: - UIGestureRecognizerDelegate
 
@@ -528,6 +529,59 @@ struct NauticalMapView: UIViewRepresentable {
                 isProgrammaticRegionChange = false
             }
             updateCalloutPosition(in: mapView)
+        }
+
+        // MARK: - Callout Management
+
+        func showCallout(for annotation: WaypointAnnotation, in mapView: MKMapView) {
+            removeCallout()
+            selectedWaypointAnnotation = annotation
+
+            let content = WaypointCalloutContent(
+                waypoint: annotation.waypoint,
+                onClose: { [weak self] in
+                    guard let self = self else { return }
+                    mapView.deselectAnnotation(annotation, animated: true)
+                    self.removeCallout()
+                },
+                onDelete: { [weak self] in
+                    guard let self = self else { return }
+                    self.removeCallout()
+                    self.parent?.onDeleteWaypoint?(annotation.waypoint)
+                }
+            )
+
+            let hostingController = UIHostingController(rootView: content)
+            hostingController.view.backgroundColor = .clear
+            hostingController.view.translatesAutoresizingMaskIntoConstraints = true
+
+            let fittingSize = hostingController.view.intrinsicContentSize
+            hostingController.view.frame.size = fittingSize
+
+            mapView.addSubview(hostingController.view)
+            calloutHostingController = hostingController
+
+            updateCalloutPosition(in: mapView)
+        }
+
+        func removeCallout() {
+            calloutHostingController?.view.removeFromSuperview()
+            calloutHostingController = nil
+            selectedWaypointAnnotation = nil
+        }
+
+        func updateCalloutPosition(in mapView: MKMapView) {
+            guard let annotation = selectedWaypointAnnotation,
+                  let calloutView = calloutHostingController?.view else { return }
+
+            let point = mapView.convert(annotation.coordinate, toPointTo: mapView)
+            let calloutSize = calloutView.intrinsicContentSize
+            calloutView.frame = CGRect(
+                x: point.x - calloutSize.width / 2,
+                y: point.y - calloutSize.height - 20,
+                width: calloutSize.width,
+                height: calloutSize.height
+            )
         }
     }
 }
