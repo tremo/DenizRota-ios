@@ -182,18 +182,6 @@ struct MapView: View {
                     }
                 }
 
-                // Zaman cubugu (Windy-tarzi)
-                if showTimelineBar {
-                    TimelineBarView(
-                        selectedDate: $selectedForecastDate,
-                        onDateChanged: { date in
-                            onForecastDateChanged(date)
-                        }
-                    )
-                    .padding(.horizontal, 16)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-
                 // Alt butonlar
                 HStack(spacing: 16) {
                     // Rota modu toggle
@@ -293,7 +281,18 @@ struct MapView: View {
                     .disabled(activeRoute?.waypoints.isEmpty ?? true && !locationManager.isTracking)
                 }
                 .padding(.horizontal, 20)
-                .padding(.bottom, 30)
+                .padding(.bottom, showTimelineBar ? 8 : 30)
+
+                // Zaman cubugu (tab bar'in hemen ustunde)
+                if showTimelineBar {
+                    TimelineBarView(
+                        selectedDate: $selectedForecastDate,
+                        onDateChanged: { date in
+                            onForecastDateChanged(date)
+                        }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
 
             // Konum izni uyarisi
