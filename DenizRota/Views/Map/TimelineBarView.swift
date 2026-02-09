@@ -1,20 +1,25 @@
 import SwiftUI
 
-/// Windy-tarzi ince zaman cubugu - haritanin altinda gosterilir
-/// Kullanici kaydirarak saat ve gun secer, hava durumu buna gore guncellenir
+/// Windy-tarzi zaman cubugu - tab bar'in hemen ustunde gosterilir
+/// Parmakla saga sola kaydirarak saat secilir, her saat degisiminde haptic feedback verilir
 struct TimelineBarView: View {
     @Binding var selectedDate: Date
     let onDateChanged: (Date) -> Void
 
     @State private var hours: [Date] = []
-    @State private var scrollTarget: Date?
+    @State private var currentIndex: Int = 0
+    @State private var dragOffset: CGFloat = 0
+    @State private var lastSnappedIndex: Int = 0
 
     private let calendar = Calendar.current
-    private let hourWidth: CGFloat = 44
-    private let barHeight: CGFloat = 44
+    private let hourWidth: CGFloat = 48
+    private let hapticFeedback = UISelectionFeedbackGenerator()
 
     var body: some View {
         VStack(spacing: 0) {
+            // Ince ayirici cizgi
+            Divider()
+
             // Secilen zaman gostergesi
             HStack(spacing: 6) {
                 Image(systemName: "clock")
@@ -50,68 +55,104 @@ struct TimelineBarView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
 
-            // Saat cubugu
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 0) {
-                        ForEach(hours, id: \.self) { hour in
+            // Kaydirmali saat cubugu
+            GeometryReader { geo in
+                let centerX = geo.size.width / 2
+
+                ZStack {
+                    // Merkez secim gostergesi (mavi alan)
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(.blue.opacity(0.15))
+                        .frame(width: hourWidth - 4, height: 24)
+                        .position(x: centerX, y: 13)
+
+                    // Ust isaretci cizgi
+                    Triangle()
+                        .fill(.blue)
+                        .frame(width: 8, height: 4)
+                        .position(x: centerX, y: 1)
+
+                    // Saat seridi
+                    HStack(spacing: 0) {
+                        ForEach(hours.indices, id: \.self) { index in
                             TimelineHourCell(
-                                hour: hour,
-                                isSelected: isSameHour(hour, selectedDate),
-                                isDayStart: calendar.component(.hour, from: hour) == 0,
-                                isCurrentHour: isSameHour(hour, Date())
+                                hour: hours[index],
+                                isSelected: index == effectiveIndex,
+                                isDayStart: calendar.component(.hour, from: hours[index]) == 0,
+                                isCurrentHour: isSameHour(hours[index], Date())
                             )
                             .frame(width: hourWidth)
-                            .id(hour)
-                            .onTapGesture {
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    selectedDate = hour
+                        }
+                    }
+                    .offset(x: centerX - CGFloat(currentIndex) * hourWidth - hourWidth / 2 + dragOffset)
+                    .gesture(
+                        DragGesture(minimumDistance: 5)
+                            .onChanged { value in
+                                dragOffset = value.translation.width
+
+                                // Surukleme sirasinda hangi saatte oldugunu hesapla
+                                let proposedIndex = clampedIndex(currentIndex - Int(round(value.translation.width / hourWidth)))
+
+                                if proposedIndex != lastSnappedIndex {
+                                    hapticFeedback.selectionChanged()
+                                    lastSnappedIndex = proposedIndex
+                                    selectedDate = hours[proposedIndex]
                                 }
-                                onDateChanged(hour)
                             }
-                        }
-                    }
-                    .padding(.horizontal, 8)
+                            .onEnded { value in
+                                // Momentum hesabi: hiz + mevcut konum
+                                let velocity = value.predictedEndTranslation.width - value.translation.width
+                                let totalTranslation = value.translation.width + velocity * 0.3
+                                let hoursMoved = -Int(round(totalTranslation / hourWidth))
+                                let newIndex = clampedIndex(currentIndex + hoursMoved)
+
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    currentIndex = newIndex
+                                    dragOffset = 0
+                                }
+
+                                lastSnappedIndex = newIndex
+                                selectedDate = hours[newIndex]
+                                onDateChanged(hours[newIndex])
+                            }
+                    )
                 }
-                .frame(height: 30)
-                .onChange(of: scrollTarget) { _, newValue in
-                    if let target = newValue {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            proxy.scrollTo(target, anchor: .center)
-                        }
-                        scrollTarget = nil
-                    }
-                }
-                .onAppear {
-                    // Kisa gecikme ile scroll (layout tamamlansin)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        proxy.scrollTo(closestHour(to: selectedDate), anchor: .center)
-                    }
-                }
+                .clipped()
             }
+            .frame(height: 28)
+            .padding(.bottom, 2)
         }
-        .frame(height: barHeight)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
         .onAppear {
             generateHours()
+            hapticFeedback.prepare()
         }
     }
 
     // MARK: - Helpers
 
+    /// Surukleme sirasinda hangi index'in secili oldugunu hesaplar
+    private var effectiveIndex: Int {
+        clampedIndex(currentIndex - Int(round(dragOffset / hourWidth)))
+    }
+
     private var isNow: Bool {
-        abs(selectedDate.timeIntervalSince(closestHour(to: Date()))) < 1800
+        guard !hours.isEmpty else { return false }
+        return abs(selectedDate.timeIntervalSince(closestHour(to: Date()))) < 1800
     }
 
     private func selectNow() {
         let now = closestHour(to: Date())
-        withAnimation(.easeInOut(duration: 0.15)) {
-            selectedDate = now
+        if let index = hours.firstIndex(where: { isSameHour($0, now) }) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                currentIndex = index
+                dragOffset = 0
+            }
+            lastSnappedIndex = index
+            selectedDate = hours[index]
+            onDateChanged(hours[index])
+            hapticFeedback.selectionChanged()
         }
-        scrollTarget = now
-        onDateChanged(now)
     }
 
     private func generateHours() {
@@ -119,6 +160,11 @@ struct TimelineBarView: View {
         let startHour = calendar.dateInterval(of: .hour, for: now)?.start ?? now
         hours = (0..<72).compactMap { offset in
             calendar.date(byAdding: .hour, value: offset, to: startHour)
+        }
+        // Baslangic index'ini secilen saate ayarla
+        if let index = hours.firstIndex(where: { isSameHour($0, selectedDate) }) {
+            currentIndex = index
+            lastSnappedIndex = index
         }
     }
 
@@ -130,6 +176,24 @@ struct TimelineBarView: View {
     private func isSameHour(_ a: Date, _ b: Date) -> Bool {
         calendar.component(.hour, from: a) == calendar.component(.hour, from: b) &&
         calendar.isDate(a, inSameDayAs: b)
+    }
+
+    private func clampedIndex(_ index: Int) -> Int {
+        guard !hours.isEmpty else { return 0 }
+        return max(0, min(hours.count - 1, index))
+    }
+}
+
+// MARK: - Triangle Shape (merkez isaretci)
+
+private struct Triangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -155,21 +219,10 @@ private struct TimelineHourCell: View {
                 // Saat
                 Text(hourLabel)
                     .font(.system(size: 11, weight: isSelected ? .bold : .regular, design: .rounded))
-                    .foregroundStyle(isSelected ? .white : isCurrentHour ? .blue : .secondary)
+                    .foregroundStyle(isSelected ? .blue : isCurrentHour ? .blue : .secondary)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            Group {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(.blue)
-                } else if isCurrentHour {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(.blue.opacity(0.1))
-                }
-            }
-        )
         .padding(.horizontal, 1)
         .padding(.vertical, 2)
     }
@@ -194,8 +247,6 @@ private struct TimelineHourCell: View {
             selectedDate: .constant(Date()),
             onDateChanged: { _ in }
         )
-        .padding(.horizontal, 16)
-        .padding(.bottom, 80)
     }
     .background(Color.gray.opacity(0.3))
 }
