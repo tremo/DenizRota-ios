@@ -46,9 +46,7 @@ struct MapTabView: View {
     var body: some View {
         NavigationStack {
             MapView(routeToShow: $routeToShow)
-                .navigationTitle("DenizRota")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                .toolbar(.hidden, for: .navigationBar)
         }
     }
 }
