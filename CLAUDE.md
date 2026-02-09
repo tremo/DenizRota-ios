@@ -35,26 +35,36 @@ DenizRota, amatör denizciler için tekne rota planlama ve seyir takibi uygulama
 ### Temel Bilgiler
 - **Platform**: iOS 17.0+
 - **Dil**: Swift 5.9+ / SwiftUI
-- **Ana Özellikler**: Rota planlama, GPS tracking, hava durumu, OpenSeaMap
+- **Ana Özellikler**: Rota planlama, GPS tracking, saatlik hava tahmini, OpenSeaMap, Windy-tarzı rüzgar animasyonu
 - **Lokasyon**: Datça-Marmaris-Bozburun bölgesi için optimize edilmiş
+- **Toplam Kod**: ~6,376 satır Swift (24 dosya)
 
 ### Sık Kullanılan Dosyalar
 | Dosya | Amaç | Satır |
 |-------|------|-------|
-| `MapView.swift` | Ana harita UI, rota yönetimi | ~700 |
-| `NauticalMapView.swift` | UIKit harita wrapper, OpenSeaMap | 406 |
-| `LocationManager.swift` | GPS + background tracking | ~200 |
-| `WeatherService.swift` | Open-Meteo API | ~150 |
-| `FetchCalculator.swift` | Kıyı fetch hesaplama | 107 |
-| `Constants.swift` | Sabitler, deniz alanları, kıyı verileri | ~400 |
-| `DenizRotaApp.swift` | App entry point, SwiftData schema | 82 |
+| `MapView.swift` | Ana harita UI, rota yönetimi, rüzgar overlay | 716 |
+| `NauticalMapView.swift` | UIKit harita wrapper, OpenSeaMap | 631 |
+| `MapOverlays.swift` | Windy-tarzı rüzgar partikül animasyonu, dalga overlay, grid loader | 577 |
+| `TripTrackingView.swift` | Aktif seyir takip UI | 499 |
+| `TimelineBarView.swift` | Windy-tarzı zaman çubuğu | 201 |
+| `WeatherService.swift` | Open-Meteo API (saatlik tahmin) | 282 |
+| `LocationManager.swift` | GPS + background tracking | 211 |
+| `FetchCalculator.swift` | Kıyı fetch hesaplama | 106 |
+| `Constants.swift` | Sabitler, deniz alanları, kıyı verileri | 258 |
+| `DenizRotaApp.swift` | App entry point, SwiftData schema | 81 |
 
 ### Önemli State Management
 ```swift
-@StateObject private var locationManager = LocationManager.shared
+// MapView ana state'leri
 @EnvironmentObject var locationManager: LocationManager
-@Query private var routes: [Route]
+@Query(sort: \Route.updatedAt, order: .reverse) private var routes: [Route]
 @Environment(\.modelContext) private var modelContext
+@State private var mapStyle: MapStyleOption = .hybrid
+@State private var showOpenSeaMap = true
+@State private var showTimelineBar = false
+@State private var selectedForecastDate = Date()
+@State private var showWindOverlay = false
+@State private var windGridData: [WindGridPoint] = []
 ```
 
 ### Koordinatlar (Test İçin)
@@ -167,9 +177,10 @@ DenizRota/
 ├── Views/
 │   ├── ContentView.swift        # Tab bar ana görünüm
 │   ├── Map/
-│   │   ├── MapView.swift        # Ana harita görünümü
-│   │   ├── NauticalMapView.swift # UIViewRepresentable harita wrapper
-│   │   └── MapOverlays.swift    # Rüzgar/dalga overlay
+│   │   ├── MapView.swift        # Ana harita görünümü (716 satır)
+│   │   ├── NauticalMapView.swift # UIViewRepresentable harita wrapper (631 satır)
+│   │   ├── MapOverlays.swift    # Windy-tarzı rüzgar partikül animasyonu + dalga overlay (577 satır)
+│   │   └── TimelineBarView.swift # Windy-tarzı zaman çubuğu (201 satır)
 │   ├── Route/
 │   │   └── RouteListView.swift  # Kayıtlı rotalar listesi
 │   ├── Trip/
@@ -252,22 +263,27 @@ DenizRota/
 - Distance filter: 10m minimum
 
 ### WeatherService (actor)
-**Dosya**: `Services/WeatherService.swift`
-**Amaç**: Open-Meteo API entegrasyonu, hava durumu ve dalga verileri
+**Dosya**: `Services/WeatherService.swift` (282 satır)
+**Amaç**: Open-Meteo API entegrasyonu, saatlik hava durumu ve dalga verileri
 **Singleton**: `WeatherService.shared`
 
 **Önemli Metodlar**:
 ```swift
-func fetchWeather(lat: Double, lng: Double) async throws -> (wind: WindData, marine: MarineData?)
+func fetchWeather(for coordinate: CLLocationCoordinate2D, date: Date = Date()) async throws -> WeatherData
+func clearCache()
 ```
 
-**Cache**: 1 saat in-memory cache (actor ile thread-safe)
+**Cache**: 1 saat in-memory cache (actor ile thread-safe), cache key: `"lat,lng,day,hour"` formatı
 
 **API'ler**:
-1. Weather API: `https://api.open-meteo.com/v1/forecast`
-2. Marine API: `https://marine-api.open-meteo.com/v1/marine`
+1. Weather API: `https://api.open-meteo.com/v1/forecast` (hourly, forecast_days=3)
+2. Marine API: `https://marine-api.open-meteo.com/v1/marine` (hourly, forecast_days=3)
 
-**Not**: Marine API kıyı dışında veri döndürmeyebilir (optional)
+**Özellikler**:
+- Saatlik tahmin: `date` parametresi ile belirli saat için veri döndürür
+- Exponential backoff retry (3 deneme)
+- Marine API opsiyonel (kıyı dışında veri döndürmeyebilir)
+- `WeatherData` struct: windSpeed, windDirection, windGusts, temperature, waveHeight, waveDirection, wavePeriod, fetchDistance, riskLevel (computed)
 
 ### NotificationManager
 **Dosya**: `Services/NotificationManager.swift`
@@ -328,6 +344,45 @@ func adjustWaveHeight(_ waveHeight: Double, fetchKm: Double) -> Double
 2. Karaya çarpana kadar devam (max 100 km)
 3. Fetch mesafesine göre dalga düşürme faktörü uygula
 4. CoastlineData.allPoints ile detaylı kıyı kontrolü
+
+### WeatherGridLoader
+**Dosya**: `Views/Map/MapOverlays.swift` (satır 491-577)
+**Amaç**: Harita bölgesi için grid bazlı rüzgar/dalga verisi yükleme
+**Singleton**: `WeatherGridLoader.shared`
+
+**Önemli Metodlar**:
+```swift
+func loadWindGrid(for region: MKCoordinateRegion, date: Date) async -> [WindGridPoint]
+func loadWaveGrid(for region: MKCoordinateRegion, date: Date) async -> [WaveGridPoint]
+```
+
+**Algoritma**:
+- Harita bölgesini 6x6 (rüzgar) veya 8x8 (dalga) grid'e böler
+- Her grid noktası için paralel API çağrısı (`withTaskGroup`)
+- `SeaAreas.isInSea()` ile kara noktalarını atlar
+
+### WindOverlayView (Windy-tarzı Rüzgar Animasyonu)
+**Dosya**: `Views/Map/MapOverlays.swift` (satır 1-250)
+**Amaç**: 800 partikül ile Windy benzeri rüzgar akış animasyonu
+
+**Teknik Detaylar**:
+- SwiftUI `Canvas` ile GPU-hızlandırılmış çizim
+- 800 partikül, her biri gradient trail ile çizilir
+- 5 seviyeli renk skalası: Yeşil (0-10) → Sarı (10-20) → Turuncu (20-30) → Kırmızı (30-40) → Koyu Kırmızı (40+)
+- Partikül yaşam döngüsü: doğum → rüzgar yönünde hareket → ölüm → yeniden doğum
+- IDW (Inverse Distance Weighting) ile grid noktaları arasında interpolasyon
+- Timer-based animasyon (~30 FPS)
+
+### TimelineBarView
+**Dosya**: `Views/Map/TimelineBarView.swift` (201 satır)
+**Amaç**: Windy-tarzı ince zaman çubuğu, saat/gün seçimi
+**Binding**: `@Binding var selectedDate: Date`
+
+**Özellikler**:
+- Yatay scroll ile saatlik seçim (48 saat - bugün + yarın)
+- "Şimdi" etiketi mevcut saat için
+- Gece saatleri koyu arka plan ile ayırt edilir
+- `onDateChanged` callback ile hava durumu güncelleme tetiklenir
 
 ## API Endpoints
 
@@ -403,7 +458,7 @@ Params: latitude, longitude, hourly=wave_height,wave_direction,wave_period
 
 #### Weather Service Pattern
 ```swift
-let weather = try await WeatherService.shared.fetchWeather(lat: lat, lng: lng)
+let weather = try await WeatherService.shared.fetchWeather(for: coordinate, date: selectedDate)
 ```
 
 #### Notification Pattern
@@ -467,6 +522,20 @@ NotificationManager.shared.scheduleArrivalNotification(waypoint: waypoint, dista
 - [x] Kompakt waypoint detay kartları
 - [x] Uyarlanabilir tema desteği (açık/koyu/sistem)
 
+### Faz 5: Windy-tarzı Görselleştirme ✅
+- [x] Saatlik hava durumu tahmini (3 günlük, hourly API)
+- [x] Windy-tarzı zaman çubuğu (TimelineBarView) - saat/gün seçimi
+- [x] Rüzgar partikül animasyonu overlay'ı (800 partikül, gradient trail)
+- [x] 5 seviyeli renk skalası (yeşil→sarı→turuncu→kırmızı→koyu kırmızı)
+- [x] Rüzgar lejantı (WindLegendView)
+- [x] WeatherGridLoader - harita bölgesi için grid bazlı hava verisi
+- [x] Debounce ile harita bölge değişikliklerinde otomatik grid yükleme
+- [x] Zaman değişikliğinde hem waypoint hem grid verisini güncelleme
+
+### Kaldırılan Özellikler
+- ~~Korunaklı koylar (Protected Coves)~~ - Overpass API ile eklendi, sonra karmaşıklık sebebiyle tamamen kaldırıldı (PR #24)
+- ~~ShelterAnalyzer~~ - Rüzgar sığınağı analizi eklendi (PR #19), sonra kaldırıldı (PR #24)
+
 ## Sık Yapılan İşlemler
 
 ### Yeni Model Ekleme
@@ -521,7 +590,7 @@ Her madde bagimsiz olarak uygulanabilir.
 **Durum:** TAMAMLANDI (PR #8-16)
 **Dosyalar:** `Views/Map/MapView.swift`, `Views/Map/NauticalMapView.swift`
 **Yapilan:**
-1. ✅ `NauticalMapView.swift` UIViewRepresentable wrapper oluşturuldu (406 satır)
+1. ✅ `NauticalMapView.swift` UIViewRepresentable wrapper oluşturuldu (631 satır)
 2. ✅ OpenSeaMap tile overlay entegrasyonu tamamlandı (`https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png`)
 3. ✅ `MapStyleOption` enum ile harita tipi seçici eklendi (standard/hybrid/satellite)
 4. ✅ Varsayılan harita tipi `.hybrid` olarak ayarlandı (MapView.swift satır 20)
@@ -536,23 +605,31 @@ Her madde bagimsiz olarak uygulanabilir.
 - Zoom level: 6-18 arası
 - Waypoint'ler risk seviyesine göre renklendirilmiş pinler (yeşil/sarı/kırmızı)
 - Kompakt overlay kart tasarımı ile waypoint detay gösterimi
+- `onRegionChanged` callback ile harita bölge değişikliklerinde rüzgar grid'i yenilenir
+- `onDeleteWaypoint` callback ile waypoint silme desteği
 
 ---
 
-### TODO-4: Weather API'yi Saatlik Tahmine Gecir [YUKSEK]
-**Durum:** Yapilmadi
-**Dosyalar:** `Services/WeatherService.swift`
-**Sorun:** API `current=...` parametresi kullaniyor (satir 66). Hep simdiki hava durumunu dondurur. DeparturePickerView gelecek saat secmeye izin veriyor ama hava durumu her zaman "simdi". Datca-Marmaris'te ogle sonrasi imbat 15-25 knot cikar, sabah ruzgarsiz olur.
-**Yapilacak:**
-1. `WeatherService.fetchWeather` metoduna `date: Date = Date()` parametresi ekle
-2. API cagrisini degistir:
-   - `current=...` yerine `hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m,temperature_2m`
-   - `forecast_days=2` ekle (bugun + yarin)
-   - Response'ta `hourly.time[]` dizisinden hedef saate en yakin degeri sec
-3. Marine API icin ayni: `hourly=wave_height,wave_direction,wave_period`
-4. Response parsing: `WeatherAPIResponse` ve `MarineAPIResponse` struct'larini `hourly` formatina guncelle
-5. `MapView.loadWeatherForRoute()` ve `DeparturePickerView` entegre et - secilen kalkis saatindeki hava durumunu gostersin
-6. Cache key'e saat bilgisini ekle: `"\(lat),\(lng),\(hour)"` formati
+### TODO-3: Ruzgar Siginagi Analizi [ORTA] ❌ KALDIRILDI
+**Durum:** TAMAMLANDI (PR #19) sonra KALDIRILDI (PR #24)
+**Dosyalar:** `Utils/ShelterAnalyzer.swift` (silindi), `Services/OverpassService.swift` (silindi)
+**Aciklama:** Korunakli koylar ve ruzgar siginagi analizi ozelligi eklendi (Overpass API ile dinamik koy yukleme), ancak karmasiklik ve performans sorunlari nedeniyle tamamen kaldirildi.
+
+---
+
+### TODO-4: Weather API'yi Saatlik Tahmine Gecir [YUKSEK] ✅
+**Durum:** TAMAMLANDI
+**Dosyalar:** `Services/WeatherService.swift`, `Views/Map/MapView.swift`, `Views/Map/TimelineBarView.swift`
+**Yapilan:**
+1. ✅ `WeatherService.fetchWeather` metoduna `date: Date = Date()` parametresi eklendi (satir 15)
+2. ✅ API `hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m,temperature_2m` kullaniyor (satir 70)
+3. ✅ `forecast_days=3` eklendi (bugun + 2 gun) (satir 71)
+4. ✅ Marine API ayni: `hourly=wave_height,wave_direction,wave_period` (satir 83)
+5. ✅ `WeatherAPIResponse` ve `MarineAPIResponse` `hourly` formatina guncellendi, `valuesForDate()` ile hedef saate en yakin deger seciliyor
+6. ✅ Cache key: `"\(lat),\(lng),\(day),\(hour)"` formati (satir 117-124)
+7. ✅ Windy-tarzi `TimelineBarView` ile saat/gun secimi entegre edildi
+8. ✅ `loadWeatherForRoute()` secilen `selectedForecastDate`'i kullaniyor (satir 447)
+9. ✅ Exponential backoff retry mekanizmasi eklendi (3 deneme)
 
 ---
 
@@ -565,7 +642,7 @@ Her madde bagimsiz olarak uygulanabilir.
 2. Satir 59: `route.waypoints` optional chain kaldir (ayni sorun)
 3. Satir 72: `route.waypoints?.forEach` -> `route.waypoints.forEach`
 4. Satir 80: `route.waypoints` optional chain kaldir
-5. Satir 88: `fetchWeather(for: waypoint.coordinate, date: departureDate)` -> WeatherService'in imzasina uydur. Eger TODO-4 yapildiysa `date` parametresi olacak, yapilmadiysa `date` parametresini kaldir
+5. Satir 88: `fetchWeather(for: waypoint.coordinate, date: departureDate)` -> WeatherService'in imzasina uydur. TODO-4 tamamlandi, `date` parametresi mevcut: `WeatherService.shared.fetchWeather(for: coordinate, date: date)`
 6. Satir 141: `route.waypoints?.count ?? 0` -> `route.waypoints.count`
 7. `Waypoint.updateWeather(from:)` extension'indaki (satir 270-283) `data.waveHeight` optional chain ve `fetchResult.fetchKm` hatasini duzelt:
    - `calculateFetch()` Double dondurur, `.fetchKm` property'si yok
@@ -686,8 +763,8 @@ Her madde bagimsiz olarak uygulanabilir.
 ## Öncelikli Geliştirme Yol Haritası
 
 ### Kısa Vadeli (1-2 Hafta)
-1. **TODO-4**: Saatlik hava tahmini - DeparturePickerView'ın gerçek değeri için gerekli
-3. **TODO-5**: RouteManager derleme hataları - Teknik borç temizliği
+1. ~~**TODO-4**: Saatlik hava tahmini~~ ✅ TAMAMLANDI
+2. **TODO-5**: RouteManager derleme hataları - Teknik borç temizliği
 
 ### Orta Vadeli (3-4 Hafta)
 4. **TODO-6**: TripManager entegrasyonu - Mevcut kod kullanılmıyor
@@ -704,7 +781,8 @@ Her madde bagimsiz olarak uygulanabilir.
 - RouteManager ve MapView arasında kod tekrarı (iki paralel sistem)
 - TripManager kullanılmıyor, doğrudan LocationManager çağrılıyor
 - Hardcoded fuel/speed değerleri (BoatSettings var ama kullanılmıyor)
-- Weather API hourly tahmin desteklemiyor (current only)
+- ~~Weather API hourly tahmin desteklemiyor~~ ✅ ÇÖZÜLDÜ
+- RouteManager derleme hataları (optional chaining sorunları)
 
 ### Firebase Entegrasyonu (Gelecek)
 - Şu an SDK kurulu değil, FirebaseManager placeholder
@@ -723,8 +801,10 @@ Her madde bagimsiz olarak uygulanabilir.
 - [ ] Web app ile ortak data
 
 ### UI İyileştirmeleri
-- [x] Seyir tarihi/saati seçici (departure picker)
+- [x] Seyir tarihi/saati seçici → Windy-tarzı zaman çubuğuna dönüştürüldü
 - [x] Otomatik hava durumu güncelleme (15 dk)
+- [x] Windy-tarzı rüzgar partikül animasyonu
+- [x] Saatlik hava tahmini (3 günlük)
 - [ ] Kayıtlı rotalar görünümünü geliştir
 - [x] Dark mode desteği
 
@@ -759,6 +839,9 @@ Her madde bagimsiz olarak uygulanabilir.
 3. ✅ Zoom in/out
 4. ✅ Pan (kaydır)
 5. ✅ User location gösterimi
+6. ✅ Rüzgar partikül animasyonu toggle
+7. ✅ Zaman çubuğu ile saat/gün seçimi
+8. ✅ Rüzgar renk skalası lejantı
 
 #### Bildirimler
 1. ✅ Notification permission iste
@@ -802,9 +885,9 @@ Her madde bagimsiz olarak uygulanabilir.
 - **Debug**: `print("Annotations count: \(mapView.annotations.count)")` ile debug et
 
 ### Weather API Hep Aynı Veriyi Döndürüyor
-- **Sebep**: Cache 1 saat süreyle aktif
-- **Çözüm**: Test için cache'i temizle veya `WeatherService.shared` yeni instance oluştur
-- **Geliştirme**: TODO-4'te saatlik tahmin eklendikten sonra cache key'e saat eklenecek
+- **Sebep**: Cache 1 saat süreyle aktif, cache key saat bilgisi içeriyor (`lat,lng,day,hour`)
+- **Çözüm**: Test için `WeatherService.shared.clearCache()` çağır
+- **Not**: Farklı saat seçildiğinde farklı cache key kullanılır, dolayısıyla yeni API çağrısı yapılır
 
 ### GPS Noktaları Kaydedilmiyor
 - **Sebep**: Accuracy threshold (50m) veya jump threshold (1000m) filtresi
@@ -847,7 +930,10 @@ Her madde bagimsiz olarak uygulanabilir.
 - ✅ Annotation reuse (dequeueReusableAnnotationView)
 - ✅ Programmatic vs user region change ayırımı (isProgrammaticRegionChange)
 - ✅ Selective update (sadece değişen annotation'ları güncelle)
+- ✅ Wind grid debounce: 1.5s bekleme ile gereksiz API çağrılarını önleme
+- ✅ SwiftUI Canvas ile GPU-hızlandırılmış partikül çizimi
 - ⚠️ Dikkat: OpenSeaMap tile'ları ağ üzerinden yükleniyor, yavaş bağlantıda gecikebilir
+- ⚠️ Dikkat: Rüzgar overlay aktifken 6x6=36+ API çağrısı yapılır (grid noktaları)
 
 ### Battery Optimization
 - ✅ Background location sadece tracking aktifken
@@ -915,7 +1001,7 @@ git log --oneline --max-count=10
 1. RouteManager derleme hataları (TODO-5)
 2. TripManager kullanılmıyor (TODO-6)
 3. Hardcoded fuel/speed değerleri (TODO-9)
-4. Weather API sadece current data (TODO-4)
+4. ~~Weather API sadece current data~~ ✅ ÇÖZÜLDÜ (TODO-4)
 5. Harita merkezi Ege genel (TODO-8)
 
 ### Gelecek Özellikler
