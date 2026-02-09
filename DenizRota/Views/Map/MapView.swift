@@ -146,7 +146,7 @@ struct MapView: View {
                         Image(systemName: "wind")
                             .font(.title3)
                             .padding(10)
-                            .background(showWindOverlay ? .blue : .ultraThinMaterial)
+                            .background(showWindOverlay ? AnyShapeStyle(Color.blue) : AnyShapeStyle(.ultraThinMaterial))
                             .foregroundStyle(showWindOverlay ? .white : .primary)
                             .clipShape(Circle())
                             .shadow(radius: 2)
