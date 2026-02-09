@@ -72,6 +72,7 @@ struct NauticalMapView: UIViewRepresentable {
 
     var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
     var onDeleteWaypoint: ((Waypoint) -> Void)?
+    var onRegionChanged: ((MKCoordinateRegion) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -405,6 +406,7 @@ struct NauticalMapView: UIViewRepresentable {
 
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
             updateCalloutPosition(in: mapView)
+            parent?.onRegionChanged?(mapView.region)
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {

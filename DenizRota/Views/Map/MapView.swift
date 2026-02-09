@@ -33,6 +33,16 @@ struct MapView: View {
     @State private var isLoadingWeather = false
     @State private var lastWeatherUpdate: Date?
 
+    // Ruzgar partikul overlay (Windy-tarzi)
+    @State private var showWindOverlay = false
+    @State private var windGridData: [WindGridPoint] = []
+    @State private var isLoadingWindGrid = false
+    @State private var currentMapRegion = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 38.5, longitude: 27.0),
+        span: MKCoordinateSpan(latitudeDelta: 2, longitudeDelta: 2)
+    )
+    @State private var windGridLoadTask: Task<Void, Never>?
+
     // Otomatik hava durumu guncelleme timer'i (15 dakika)
     private let weatherRefreshTimer = Timer.publish(
         every: AppConstants.weatherAutoRefreshInterval,
@@ -55,9 +65,23 @@ struct MapView: View {
                 },
                 onDeleteWaypoint: { waypoint in
                     deleteWaypoint(waypoint)
+                },
+                onRegionChanged: { region in
+                    currentMapRegion = region
+                    scheduleWindGridReload()
                 }
             )
             .ignoresSafeArea(edges: .top)
+
+            // Ruzgar partikul animasyonu overlay'i
+            if showWindOverlay && !windGridData.isEmpty {
+                WindOverlayView(
+                    windData: windGridData,
+                    mapRegion: currentMapRegion
+                )
+                .ignoresSafeArea(edges: .top)
+                .allowsHitTesting(false)
+            }
 
             // UI Overlay
             VStack {
@@ -109,6 +133,31 @@ struct MapView: View {
                             .clipShape(Circle())
                             .shadow(radius: 2)
                     }
+
+                    // Ruzgar overlay toggle - Sag ust
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showWindOverlay.toggle()
+                        }
+                        if showWindOverlay {
+                            Task { await loadWindGrid() }
+                        }
+                    } label: {
+                        Image(systemName: "wind")
+                            .font(.title3)
+                            .padding(10)
+                            .background(showWindOverlay ? .blue : .ultraThinMaterial)
+                            .foregroundStyle(showWindOverlay ? .white : .primary)
+                            .clipShape(Circle())
+                            .shadow(radius: 2)
+                            .overlay {
+                                if isLoadingWindGrid {
+                                    ProgressView()
+                                        .scaleEffect(0.6)
+                                        .tint(showWindOverlay ? .white : .blue)
+                                }
+                            }
+                    }
                     }
                     .padding(.trailing, 16)
                     .padding(.top, 8)
@@ -122,6 +171,16 @@ struct MapView: View {
                 }
 
                 Spacer()
+
+                // Ruzgar renk skalasi lejanti (sol alt)
+                if showWindOverlay && !windGridData.isEmpty {
+                    HStack {
+                        WindLegendView()
+                            .padding(.leading, 16)
+                            .transition(.opacity)
+                        Spacer()
+                    }
+                }
 
                 // Zaman cubugu (Windy-tarzi)
                 if showTimelineBar {
@@ -416,6 +475,11 @@ struct MapView: View {
         if let route = activeRoute, !route.waypoints.isEmpty {
             Task { await loadWeatherForRoute() }
         }
+
+        // Ruzgar overlay aktifse grid verisini de guncelle
+        if showWindOverlay {
+            Task { await loadWindGrid() }
+        }
     }
 
     // MARK: - Trip
@@ -445,6 +509,37 @@ struct MapView: View {
             modelContext.insert(trip)
 
             print("Trip saved: \(trip.distance) km, \(trip.positions.count) positions")
+        }
+    }
+
+    // MARK: - Wind Grid
+
+    /// Ruzgar grid verisini yukle (Windy-tarzi animasyon icin)
+    private func loadWindGrid() async {
+        guard !isLoadingWindGrid else { return }
+        isLoadingWindGrid = true
+
+        let data = await WeatherGridLoader.shared.loadWindGrid(
+            for: currentMapRegion,
+            date: selectedForecastDate
+        )
+
+        await MainActor.run {
+            windGridData = data
+            isLoadingWindGrid = false
+        }
+    }
+
+    /// Harita bolge degisikliklerinde debounce ile grid yeniden yukle
+    private func scheduleWindGridReload() {
+        guard showWindOverlay else { return }
+
+        windGridLoadTask?.cancel()
+        windGridLoadTask = Task {
+            // 1.5 saniye bekle (gereksiz API cagrilarini onle)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            await loadWindGrid()
         }
     }
 

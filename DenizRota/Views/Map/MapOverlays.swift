@@ -2,104 +2,154 @@ import SwiftUI
 import MapKit
 
 // MARK: - Wind Overlay View
-/// Rüzgar partikül animasyonu overlay'i
+/// Windy-tarzi ruzgar partikul animasyonu overlay'i
+/// 5 seviyeli renk skalasi: Yesil -> Sari -> Turuncu -> Kirmizi -> Koyu Kirmizi
 struct WindOverlayView: View {
     let windData: [WindGridPoint]
     let mapRegion: MKCoordinateRegion
     @State private var particles: [WindParticle] = []
     @State private var animationTimer: Timer?
+    @State private var viewSize: CGSize = .zero
+
+    private let particleCount = 800
 
     var body: some View {
         GeometryReader { geometry in
             Canvas { context, size in
-                for particle in particles {
-                    guard let wind = getWindAtPoint(particle.position, in: size) else { continue }
-
-                    let color = windColor(for: wind.speed)
-                    let alpha = 1.0 - (particle.age / particle.maxAge)
-
-                    // Draw trail
-                    if particle.trail.count > 1 {
-                        var path = Path()
-                        path.move(to: particle.trail[0])
-                        for point in particle.trail.dropFirst() {
-                            path.addLine(to: point)
-                        }
-                        path.addLine(to: particle.position)
-
-                        context.stroke(
-                            path,
-                            with: .color(color.opacity(alpha * 0.8)),
-                            lineWidth: 1.5
-                        )
-                    }
-                }
+                drawParticles(context: context, size: size)
             }
             .onAppear {
+                viewSize = geometry.size
                 initializeParticles(in: geometry.size)
-                startAnimation(in: geometry.size)
+                startAnimation()
             }
             .onDisappear {
                 animationTimer?.invalidate()
+                animationTimer = nil
             }
             .onChange(of: geometry.size) { _, newSize in
+                viewSize = newSize
                 initializeParticles(in: newSize)
             }
         }
         .allowsHitTesting(false)
     }
 
+    // MARK: - Rendering
+
+    private func drawParticles(context: GraphicsContext, size: CGSize) {
+        for particle in particles {
+            guard particle.trail.count > 1 else { continue }
+            guard let wind = getWindAtPoint(particle.position, in: size) else { continue }
+
+            let color = windColor(for: wind.speed)
+            let lifeRatio = particle.age / particle.maxAge
+            let fadeAlpha = max(0, 1.0 - lifeRatio)
+
+            // Trail: her segment icin ayrı opacity ile gradient efekti
+            let trailPoints = particle.trail + [particle.position]
+            let segmentCount = trailPoints.count - 1
+            guard segmentCount > 0 else { continue }
+
+            for s in 0..<segmentCount {
+                // Trail basinda dusuk opacity, sonuna dogru artan
+                let segmentRatio = Double(s) / Double(segmentCount)
+                let segmentAlpha = segmentRatio * fadeAlpha * 0.85
+
+                var segPath = Path()
+                segPath.move(to: trailPoints[s])
+                segPath.addLine(to: trailPoints[s + 1])
+
+                // Ruzgar hizina gore cizgi kalinligi: 1.0 (hafif) - 2.5 (firtina)
+                let lineWidth = max(1.0, min(2.5, wind.speed / 20.0 + 0.8))
+
+                context.stroke(
+                    segPath,
+                    with: .color(color.opacity(segmentAlpha)),
+                    lineWidth: lineWidth
+                )
+            }
+
+            // Partikul basi - parlak nokta
+            let headAlpha = fadeAlpha * 0.95
+            let headSize = max(2.0, min(3.5, wind.speed / 20.0 + 1.5))
+            let headRect = CGRect(
+                x: particle.position.x - headSize / 2,
+                y: particle.position.y - headSize / 2,
+                width: headSize,
+                height: headSize
+            )
+            context.fill(
+                Path(ellipseIn: headRect),
+                with: .color(color.opacity(headAlpha))
+            )
+        }
+    }
+
+    // MARK: - Particle System
+
     private func initializeParticles(in size: CGSize) {
-        particles = (0..<500).map { _ in
+        guard size.width > 0, size.height > 0 else { return }
+        particles = (0..<particleCount).map { _ in
             WindParticle(
                 position: CGPoint(
                     x: CGFloat.random(in: 0...size.width),
                     y: CGFloat.random(in: 0...size.height)
                 ),
-                age: Double.random(in: 0...50),
-                maxAge: Double.random(in: 50...100)
+                age: Double.random(in: 0...60),
+                maxAge: Double.random(in: 40...100)
             )
         }
     }
 
-    private func startAnimation(in size: CGSize) {
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0/30.0, repeats: true) { _ in
-            updateParticles(in: size)
+    private func startAnimation() {
+        animationTimer?.invalidate()
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { _ in
+            updateParticles()
         }
     }
 
-    private func updateParticles(in size: CGSize) {
+    private func updateParticles() {
+        let size = viewSize
+        guard size.width > 0, size.height > 0 else { return }
+
         for i in particles.indices {
             guard let wind = getWindAtPoint(particles[i].position, in: size) else {
                 resetParticle(&particles[i], in: size)
                 continue
             }
 
-            // Calculate direction
+            // Ruzgar yonu -> hiz vektoru
             let dirRad = ((wind.direction + 180) * .pi) / 180.0
-            let speed = wind.speed / 5.0
 
-            // Add turbulence for gusts
-            let turbulence = wind.gusts > wind.speed + 10 ?
-                CGFloat.random(in: -0.3...0.3) : 0
+            // Ruzgar hizina orantili partikul hizi (Windy-tarzi: hizli ruzgar = hizli partikul)
+            let speedFactor = max(0.5, wind.speed / 4.0)
 
-            let dx = sin(dirRad + turbulence) * speed
-            let dy = -cos(dirRad + turbulence) * speed
+            // Hamle (gust) varsa turbelans ekle
+            let gustDiff = wind.gusts - wind.speed
+            let turbulence: CGFloat = gustDiff > 8 ?
+                CGFloat.random(in: -0.25...0.25) * (gustDiff / 30.0) : 0
 
-            // Update position
+            let dx = sin(dirRad + turbulence) * speedFactor
+            let dy = -cos(dirRad + turbulence) * speedFactor
+
+            // Trail guncelle - hizli ruzgarda daha uzun kuyruk
+            let maxTrailLength = Int(max(6, min(16, wind.speed / 3.0)))
             particles[i].trail.append(particles[i].position)
-            if particles[i].trail.count > 10 {
+            while particles[i].trail.count > maxTrailLength {
                 particles[i].trail.removeFirst()
             }
 
+            // Pozisyon guncelle
             particles[i].position.x += dx
             particles[i].position.y += dy
             particles[i].age += 1
 
-            // Reset if out of bounds or too old
+            // Sinir disi veya omur dolmussa resetle
+            let margin: CGFloat = 5
             if particles[i].age > particles[i].maxAge ||
-               particles[i].position.x < 0 || particles[i].position.x > size.width ||
-               particles[i].position.y < 0 || particles[i].position.y > size.height {
+               particles[i].position.x < -margin || particles[i].position.x > size.width + margin ||
+               particles[i].position.y < -margin || particles[i].position.y > size.height + margin {
                 resetParticle(&particles[i], in: size)
             }
         }
@@ -111,23 +161,25 @@ struct WindOverlayView: View {
             y: CGFloat.random(in: 0...size.height)
         )
         particle.age = 0
-        particle.maxAge = Double.random(in: 50...100)
+        particle.maxAge = Double.random(in: 40...100)
         particle.trail = []
     }
 
-    private func getWindAtPoint(_ point: CGPoint, in size: CGSize) -> WindGridPoint? {
-        guard !windData.isEmpty else { return nil }
+    // MARK: - Wind Interpolation (IDW)
 
-        // Convert screen point to lat/lng
+    private func getWindAtPoint(_ point: CGPoint, in size: CGSize) -> WindGridPoint? {
+        guard !windData.isEmpty, size.width > 0, size.height > 0 else { return nil }
+
+        // Ekran noktasini lat/lng'ye cevir
         let lng = mapRegion.center.longitude - mapRegion.span.longitudeDelta / 2 +
                   (Double(point.x) / Double(size.width)) * mapRegion.span.longitudeDelta
         let lat = mapRegion.center.latitude + mapRegion.span.latitudeDelta / 2 -
                   (Double(point.y) / Double(size.height)) * mapRegion.span.latitudeDelta
 
-        // Check if in sea
+        // Deniz alaninda mi kontrol et
         guard SeaAreas.isInSea(lat: lat, lng: lng) else { return nil }
 
-        // Interpolate wind data
+        // Inverse Distance Weighting (IDW) interpolasyonu
         var totalWeight = 0.0
         var speedSum = 0.0
         var gustSum = 0.0
@@ -159,17 +211,73 @@ struct WindOverlayView: View {
         )
     }
 
+    // MARK: - 5-Level Wind Color Scale
+    /// Yesil (0-10) -> Sari (10-20) -> Turuncu (20-30) -> Kirmizi (30-40) -> Koyu Kirmizi (40+)
+    /// Seviyeler arasi yumusak gecis (interpolasyon)
+
     private func windColor(for speed: Double) -> Color {
-        if speed < 10 { return .green }
-        if speed < 20 { return .yellow }
-        if speed < 30 { return .orange }
-        if speed < 40 { return .red }
-        return .purple
+        // Tam esikler icin hizli donus
+        if speed <= 0 { return Color(red: 0.20, green: 0.80, blue: 0.20) }
+        if speed >= 50 { return Color(red: 0.55, green: 0.00, blue: 0.00) }
+
+        // Gecis bolgelerinde interpolasyon (esik +/- 2 km/h)
+        let transitionWidth = 2.0
+
+        if speed < 10 - transitionWidth { return Color(red: 0.20, green: 0.80, blue: 0.20) }
+        if speed < 10 + transitionWidth {
+            let t = (speed - (10 - transitionWidth)) / (2 * transitionWidth)
+            return interpolateColor(
+                from: (0.20, 0.80, 0.20),
+                to: (1.00, 0.90, 0.10),
+                t: t
+            )
+        }
+        if speed < 20 - transitionWidth { return Color(red: 1.00, green: 0.90, blue: 0.10) }
+        if speed < 20 + transitionWidth {
+            let t = (speed - (20 - transitionWidth)) / (2 * transitionWidth)
+            return interpolateColor(
+                from: (1.00, 0.90, 0.10),
+                to: (1.00, 0.55, 0.00),
+                t: t
+            )
+        }
+        if speed < 30 - transitionWidth { return Color(red: 1.00, green: 0.55, blue: 0.00) }
+        if speed < 30 + transitionWidth {
+            let t = (speed - (30 - transitionWidth)) / (2 * transitionWidth)
+            return interpolateColor(
+                from: (1.00, 0.55, 0.00),
+                to: (0.95, 0.15, 0.10),
+                t: t
+            )
+        }
+        if speed < 40 - transitionWidth { return Color(red: 0.95, green: 0.15, blue: 0.10) }
+        if speed < 40 + transitionWidth {
+            let t = (speed - (40 - transitionWidth)) / (2 * transitionWidth)
+            return interpolateColor(
+                from: (0.95, 0.15, 0.10),
+                to: (0.55, 0.00, 0.00),
+                t: t
+            )
+        }
+        return Color(red: 0.55, green: 0.00, blue: 0.00)
+    }
+
+    private func interpolateColor(
+        from: (r: Double, g: Double, b: Double),
+        to: (r: Double, g: Double, b: Double),
+        t: Double
+    ) -> Color {
+        let ct = max(0, min(1, t))
+        return Color(
+            red: from.r + (to.r - from.r) * ct,
+            green: from.g + (to.g - from.g) * ct,
+            blue: from.b + (to.b - from.b) * ct
+        )
     }
 }
 
 // MARK: - Wave Overlay View
-/// Dalga yüksekliği görselleştirme overlay'i
+/// Dalga yuksekligi gorsellestirme overlay'i
 struct WaveOverlayView: View {
     let waveData: [WaveGridPoint]
     let mapRegion: MKCoordinateRegion
@@ -310,20 +418,21 @@ struct WaveGridPoint {
 }
 
 // MARK: - Wind Legend View
+/// 5 seviyeli ruzgar renk skalasi lejanti
 struct WindLegendView: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3) {
             Text("Ruzgar (km/h)")
                 .font(.caption2)
                 .fontWeight(.semibold)
 
             ForEach(windLevels, id: \.range) { level in
                 HStack(spacing: 4) {
-                    Circle()
+                    RoundedRectangle(cornerRadius: 2)
                         .fill(level.color)
-                        .frame(width: 10, height: 10)
+                        .frame(width: 14, height: 8)
                     Text(level.range)
-                        .font(.caption2)
+                        .font(.system(size: 9))
                 }
             }
         }
@@ -334,11 +443,11 @@ struct WindLegendView: View {
 
     private var windLevels: [(range: String, color: Color)] {
         [
-            ("0-10", .green),
-            ("10-20", .yellow),
-            ("20-30", .orange),
-            ("30-40", .red),
-            ("40+", .purple)
+            ("0-10", Color(red: 0.20, green: 0.80, blue: 0.20)),
+            ("10-20", Color(red: 1.00, green: 0.90, blue: 0.10)),
+            ("20-30", Color(red: 1.00, green: 0.55, blue: 0.00)),
+            ("30-40", Color(red: 0.95, green: 0.15, blue: 0.10)),
+            ("40+", Color(red: 0.55, green: 0.00, blue: 0.00))
         ]
     }
 }
@@ -378,62 +487,6 @@ struct WaveLegendView: View {
     }
 }
 
-// MARK: - Overlay Toggle Buttons
-struct WeatherOverlayButtons: View {
-    @Binding var showWindOverlay: Bool
-    @Binding var showWaveOverlay: Bool
-    var onLoadWeather: () async -> Void
-
-    @State private var isLoading = false
-
-    var body: some View {
-        HStack(spacing: 8) {
-            // Wind toggle
-            Button {
-                Task {
-                    if !showWindOverlay {
-                        isLoading = true
-                        await onLoadWeather()
-                        isLoading = false
-                    }
-                    showWindOverlay.toggle()
-                }
-            } label: {
-                Image(systemName: "wind")
-                    .foregroundStyle(showWindOverlay ? .white : .blue)
-                    .frame(width: 36, height: 36)
-                    .background(showWindOverlay ? Color.blue : Color.white)
-                    .clipShape(Circle())
-                    .shadow(radius: 2)
-            }
-
-            // Wave toggle
-            Button {
-                Task {
-                    if !showWaveOverlay {
-                        isLoading = true
-                        await onLoadWeather()
-                        isLoading = false
-                    }
-                    showWaveOverlay.toggle()
-                }
-            } label: {
-                Image(systemName: "water.waves")
-                    .foregroundStyle(showWaveOverlay ? .white : .blue)
-                    .frame(width: 36, height: 36)
-                    .background(showWaveOverlay ? Color.blue : Color.white)
-                    .clipShape(Circle())
-                    .shadow(radius: 2)
-            }
-
-            if isLoading {
-                ProgressView()
-                    .scaleEffect(0.8)
-            }
-        }
-    }
-}
-
 // MARK: - Weather Grid Loader
 class WeatherGridLoader {
     static let shared = WeatherGridLoader()
@@ -457,7 +510,7 @@ class WeatherGridLoader {
 
                     group.addTask {
                         let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
-                        guard let weather = try? await self.weatherService.fetchWeather(for: coord) else {
+                        guard let weather = try? await self.weatherService.fetchWeather(for: coord, date: date) else {
                             return nil
                         }
                         return WindGridPoint(
@@ -498,7 +551,7 @@ class WeatherGridLoader {
 
                     group.addTask {
                         let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
-                        guard let weather = try? await self.weatherService.fetchWeather(for: coord) else {
+                        guard let weather = try? await self.weatherService.fetchWeather(for: coord, date: date) else {
                             return nil
                         }
                         return WaveGridPoint(
