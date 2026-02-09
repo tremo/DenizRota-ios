@@ -33,14 +33,6 @@ struct MapView: View {
     @State private var isLoadingWeather = false
     @State private var lastWeatherUpdate: Date?
 
-    // Korunakli koy analizi
-    @State private var shelterResults: [CoveShelterResult] = []
-    @State private var showingShelterSheet = false
-    @State private var isShelterModeActive = false
-    @State private var isLoadingShelter = false
-    @State private var visibleRegion: MKCoordinateRegion?
-    @State private var shelterFetchTask: Task<Void, Never>?
-
     // Otomatik hava durumu guncelleme timer'i (15 dakika)
     private let weatherRefreshTimer = Timer.publish(
         every: AppConstants.weatherAutoRefreshInterval,
@@ -58,15 +50,11 @@ struct MapView: View {
                 userLocation: locationManager.currentLocation,
                 activeRoute: activeRoute,
                 isRouteMode: isRouteMode,
-                shelterResults: isShelterModeActive ? shelterResults : [],
                 onTapCoordinate: { coordinate in
                     addWaypoint(at: coordinate)
                 },
                 onDeleteWaypoint: { waypoint in
                     deleteWaypoint(waypoint)
-                },
-                onRegionChanged: { region in
-                    onMapRegionChanged(region)
                 }
             )
             .ignoresSafeArea(edges: .top)
@@ -180,43 +168,6 @@ struct MapView: View {
                         .disabled(isLoadingWeather)
                     }
 
-                    // Korunakli koylar butonu
-                    Button {
-                        toggleShelterMode()
-                    } label: {
-                        ZStack {
-                            Image(systemName: "shield.checkered")
-                                .font(.title2)
-                                .opacity(isLoadingShelter ? 0.3 : 1.0)
-
-                            if isLoadingShelter {
-                                ProgressView()
-                                    .scaleEffect(0.7)
-                                    .tint(isShelterModeActive ? .white : .teal)
-                            }
-                        }
-                        .padding(12)
-                        .background(isShelterModeActive ? .green : Color(.systemBackground))
-                        .foregroundStyle(isShelterModeActive ? .white : .teal)
-                        .clipShape(Circle())
-                        .shadow(radius: 4)
-                    }
-
-                    // Korunakli koylar listesi (aktifken)
-                    if isShelterModeActive && !shelterResults.isEmpty {
-                        Button {
-                            showingShelterSheet = true
-                        } label: {
-                            Image(systemName: "list.bullet")
-                                .font(.title2)
-                                .padding(12)
-                                .background(Color(.systemBackground))
-                                .foregroundStyle(.teal)
-                                .clipShape(Circle())
-                                .shadow(radius: 4)
-                        }
-                    }
-
                     // Rota kaydet (sadece kaydedilmemis rotalar icin)
                     if let route = activeRoute, !route.waypoints.isEmpty, route.name == "Yeni Rota" {
                         Button {
@@ -302,16 +253,11 @@ struct MapView: View {
         } message: {
             Text("Rotaniz icin bir isim girin")
         }
-        .sheet(isPresented: $showingShelterSheet) {
-            ShelterListSheet(results: shelterResults)
-                .presentationDetents([.medium, .large])
-        }
         // Otomatik hava durumu guncelleme (15 dakikada bir)
         .onReceive(weatherRefreshTimer) { _ in
             autoRefreshWeather()
         }
         .onAppear {
-            visibleRegion = mapRegion
             autoRefreshWeather()
         }
         // Kayitli rotadan secilen rotayi haritada goster
@@ -464,122 +410,11 @@ struct MapView: View {
         lastWeatherUpdate = Date()
     }
 
-    /// Zaman cubugu degistiginde cagirilir - hava durumu ve korunak analizini gunceller
+    /// Zaman cubugu degistiginde cagirilir - hava durumunu gunceller
     private func onForecastDateChanged(_ date: Date) {
         // Aktif rota varsa hava durumunu guncelle
         if let route = activeRoute, !route.waypoints.isEmpty {
             Task { await loadWeatherForRoute() }
-        }
-
-        // Korunak modu aktifse yeniden analiz et
-        if isShelterModeActive {
-            refreshShelterAnalysis()
-        }
-    }
-
-    // MARK: - Shelter Analysis
-
-    private func toggleShelterMode() {
-        if isShelterModeActive {
-            // Kapat
-            isShelterModeActive = false
-            shelterResults = []
-            shelterFetchTask?.cancel()
-            isLoadingShelter = false
-            return
-        }
-
-        refreshShelterAnalysis()
-    }
-
-    /// Harita bolgesi degistiginde cagirilir
-    private func onMapRegionChanged(_ region: MKCoordinateRegion) {
-        visibleRegion = region
-
-        guard isShelterModeActive else { return }
-
-        // Debounce: kullanici haritayi kaydirmayi birakinca 1 saniye bekle
-        shelterFetchTask?.cancel()
-        shelterFetchTask = Task {
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            guard !Task.isCancelled else { return }
-            await fetchAndDisplayShelters()
-        }
-    }
-
-    /// Korunak analizini secilen tarihe ve gorunen bolgeye gore calistir
-    private func refreshShelterAnalysis() {
-        shelterFetchTask?.cancel()
-        shelterFetchTask = Task {
-            await fetchAndDisplayShelters()
-            await MainActor.run {
-                isShelterModeActive = true
-            }
-        }
-    }
-
-    /// Overpass API'den koy verisi cekip shelter analizi yap
-    private func fetchAndDisplayShelters() async {
-        await MainActor.run { isLoadingShelter = true }
-
-        do {
-            // 1. Gorunen bolgedeki koylari Overpass API'den cek
-            let region = visibleRegion ?? mapRegion
-            let coves = try await OverpassService.shared.fetchCoves(region: region)
-
-            guard !Task.isCancelled else { return }
-
-            // 2. Ruzgar verisini al
-            let windData = await getWindData()
-
-            guard !Task.isCancelled else { return }
-
-            // 3. Analiz et
-            let results = ShelterAnalyzer.shared.analyzeCoves(
-                coves,
-                windDirection: windData.direction,
-                windSpeed: windData.speed
-            )
-
-            await MainActor.run {
-                shelterResults = results
-                isLoadingShelter = false
-            }
-        } catch {
-            // API hatasi - statik CoveData'ya fallback
-            let windData = await getWindData()
-            let results = ShelterAnalyzer.shared.analyzeCoves(
-                CoveData.all,
-                windDirection: windData.direction,
-                windSpeed: windData.speed
-            )
-
-            await MainActor.run {
-                shelterResults = results
-                isLoadingShelter = false
-            }
-        }
-    }
-
-    /// Ruzgar verisini al: rotadan, API'den veya varsayilan
-    private func getWindData() async -> (direction: Double, speed: Double) {
-        // Once aktif rotadaki waypoint'lerden dene
-        if let route = activeRoute {
-            for wp in route.waypoints {
-                if let dir = wp.windDirection, let spd = wp.windSpeed {
-                    return (dir, spd)
-                }
-            }
-        }
-
-        // API'den cek
-        do {
-            let coordinate = locationManager.currentLocation?.coordinate ??
-                CLLocationCoordinate2D(latitude: mapRegion.center.latitude, longitude: mapRegion.center.longitude)
-            let weather = try await WeatherService.shared.fetchWeather(for: coordinate, date: selectedForecastDate)
-            return (weather.windDirection, weather.windSpeed)
-        } catch {
-            return (0, 15) // Varsayilan fallback
         }
     }
 
@@ -776,90 +611,6 @@ struct PermissionOverlay: View {
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .padding(40)
-    }
-}
-
-// MARK: - Shelter List Sheet
-
-struct ShelterListSheet: View {
-    let results: [CoveShelterResult]
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if let first = results.first {
-                    Section {
-                        HStack(spacing: 8) {
-                            Image(systemName: "wind")
-                                .foregroundStyle(.blue)
-                            Text("Rüzgar: \(Int(first.windSpeed)) km/h \(first.windDirection.windDirectionText)")
-                                .font(.subheadline)
-                        }
-                    }
-                }
-
-                ForEach(ShelterLevel.allCases, id: \.self) { level in
-                    let filtered = results.filter { $0.shelterLevel == level }
-                    if !filtered.isEmpty {
-                        Section(header: shelterSectionHeader(level: level, count: filtered.count)) {
-                            ForEach(filtered) { result in
-                                ShelterCoveRow(result: result)
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Korunaklı Koylar")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Kapat") { dismiss() }
-                }
-            }
-        }
-    }
-
-    private func shelterSectionHeader(level: ShelterLevel, count: Int) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: level.icon)
-                .foregroundStyle(level.color)
-            Text("\(level.rawValue) (\(count))")
-                .foregroundStyle(level.color)
-        }
-    }
-}
-
-struct ShelterCoveRow: View {
-    let result: CoveShelterResult
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Circle()
-                .fill(result.shelterLevel.color)
-                .frame(width: 12, height: 12)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(result.cove.name)
-                    .font(.subheadline.bold())
-                Text(result.shelterLevel.shortDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            // Koy ağız yönü
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("Ağız: \(result.cove.mouthDirection.windDirectionText)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(String(format: "%.4f, %.4f", result.cove.latitude, result.cove.longitude))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .padding(.vertical, 2)
     }
 }
 

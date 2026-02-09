@@ -539,32 +539,6 @@ Her madde bagimsiz olarak uygulanabilir.
 
 ---
 
-### TODO-3: Ruzgar Siginagi Analizi Ekle [KRITIK]
-**Durum:** Yapilmadi
-**Dosyalar:** Yeni dosya `Services/ShelterAnalyzer.swift`, `Utils/Constants.swift`, `Views/Map/MapView.swift`
-**Sorun:** Gunubirlik gezi planlayan denizcinin temel sorusu "bugun hangi koy korunakli?" ama uygulama bunu cevaplayamiyor.
-**Yapilacak:**
-1. `Constants.swift`'e bilinen koy/demirleme noktalari ekle - her biri icin:
-   - Koordinat (lat, lng)
-   - Isim (varsa, yoksa "Datca GB Koyu" gibi yonsel isim)
-   - Agiz yonu (derece, kuzey=0): koyun denize acildigi yon
-   - Ornegin: Knidos koyu agiz yonu ~270 (batiya bakiyor), Bozburun koyu ~180 (guneye bakiyor)
-2. Yeni `ShelterAnalyzer.swift` olustur:
-   - `func analyzeShelter(cove: Cove, windDirection: Double, windSpeed: Double) -> ShelterLevel`
-   - ShelterLevel: `.excellent` (ruzgar koy arkasinda), `.good` (capraz), `.moderate` (kapali ama acili), `.poor` (ruzgar agizdan giriyor)
-   - Mantik: ruzgar yonu ile koy agiz yonu arasindaki aci farki
-     - 150-210 derece fark = excellent (ruzgar tam tersten)
-     - 90-150 veya 210-270 = good (capraz)
-     - 45-90 veya 270-315 = moderate
-     - 0-45 veya 315-360 = poor (ruzgar agizdan)
-3. `MapView.swift`'e "Korunakli Koylar" butonu ekle (kalkan ikonu):
-   - Tiklaninca mevcut ruzgar yonunu al
-   - Tum koylari analiz et
-   - Haritada koylariyesil/sari/kirmizi ile isaretle
-   - Liste olarak da gosterilebilir (sheet)
-
----
-
 ### TODO-4: Weather API'yi Saatlik Tahmine Gecir [YUKSEK]
 **Durum:** Yapilmadi
 **Dosyalar:** `Services/WeatherService.swift`
@@ -712,8 +686,7 @@ Her madde bagimsiz olarak uygulanabilir.
 ## Öncelikli Geliştirme Yol Haritası
 
 ### Kısa Vadeli (1-2 Hafta)
-1. **TODO-3**: Rüzgar sığınağı analizi - En çok talep gören özellik
-2. **TODO-4**: Saatlik hava tahmini - DeparturePickerView'ın gerçek değeri için gerekli
+1. **TODO-4**: Saatlik hava tahmini - DeparturePickerView'ın gerçek değeri için gerekli
 3. **TODO-5**: RouteManager derleme hataları - Teknik borç temizliği
 
 ### Orta Vadeli (3-4 Hafta)
@@ -949,5 +922,4 @@ git log --oneline --max-count=10
 - Firebase sync (web app ile)
 - Offline harita cache (TODO-10)
 - Nautical units (knot/nm) (TODO-7)
-- Shelter analysis (TODO-3)
 - Bookmark system (TODO-12)

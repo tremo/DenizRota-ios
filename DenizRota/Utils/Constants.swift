@@ -194,98 +194,6 @@ enum CoastlineData {
     }
 }
 
-// MARK: - Cove / Anchorage Data (Koy / Demirleme Noktalari)
-
-/// Korunaklı koy seviyesi
-enum ShelterLevel: String, CaseIterable {
-    case excellent = "Mükemmel"
-    case good = "İyi"
-    case moderate = "Orta"
-    case poor = "Zayıf"
-}
-
-/// Koy / demirleme noktası
-struct Cove: Identifiable {
-    let id = UUID()
-    let name: String
-    let latitude: Double
-    let longitude: Double
-    let mouthDirection: Double // Koyun denize açıldığı yön (derece, kuzey=0)
-
-    var coordinate: CLLocationCoordinate2D {
-        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
-    }
-
-    /// Koordinat bazli sabit ID (annotation eslestirme icin)
-    var stableId: String {
-        String(format: "%.4f,%.4f", latitude, longitude)
-    }
-}
-
-/// Datça-Marmaris-Bozburun bölgesi bilinen koy ve demirleme noktaları
-enum CoveData {
-    // MARK: - Datça Yarımadası Kuzey (Hisarönü/Gökova)
-    static let palamutbuku = Cove(name: "Palamutbükü", latitude: 36.72, longitude: 27.56, mouthDirection: 0)       // kuzeye bakıyor
-    static let hayitbuku = Cove(name: "Hayıtbükü", latitude: 36.73, longitude: 27.52, mouthDirection: 350)         // kuzeye bakıyor
-    static let domuzCiftligi = Cove(name: "Domuz Çiftliği Koyu", latitude: 36.73, longitude: 27.60, mouthDirection: 10) // kuzeye
-    static let kurucabuk = Cove(name: "Kurucabük", latitude: 36.74, longitude: 27.64, mouthDirection: 350)         // kuzeye
-    static let gebekum = Cove(name: "Gebekum", latitude: 36.73, longitude: 27.68, mouthDirection: 0)               // kuzeye
-    static let kargi = Cove(name: "Kargı Koyu", latitude: 36.74, longitude: 27.72, mouthDirection: 340)            // kuzeybatıya
-    static let bencik = Cove(name: "Bencik Koyu", latitude: 36.76, longitude: 28.05, mouthDirection: 0)            // kuzeye
-
-    // MARK: - Datça Yarımadası Güney (Akdeniz tarafı)
-    static let ovabuku = Cove(name: "Ovabükü", latitude: 36.70, longitude: 27.55, mouthDirection: 180)             // güneye bakıyor
-    static let kizilbuk = Cove(name: "Kızılbük", latitude: 36.70, longitude: 27.58, mouthDirection: 190)           // güneybatıya
-    static let mesudiye = Cove(name: "Mesudiye (Perili)", latitude: 36.70, longitude: 27.48, mouthDirection: 200)   // güneybatıya
-    static let datcaLiman = Cove(name: "Datça Limanı", latitude: 36.73, longitude: 27.69, mouthDirection: 180)     // güneye
-    static let aktur = Cove(name: "Aktur Koyu", latitude: 36.70, longitude: 27.60, mouthDirection: 170)            // güneye
-
-    // MARK: - Knidos / Yarımada Ucu
-    static let knidos = Cove(name: "Knidos Limanı", latitude: 36.69, longitude: 27.38, mouthDirection: 270)        // batıya bakıyor
-    static let knidosKuzey = Cove(name: "Knidos Kuzey Koyu", latitude: 36.69, longitude: 27.37, mouthDirection: 340) // kuzeybatıya
-
-    // MARK: - Hisarönü Körfezi
-    static let orhaniye = Cove(name: "Orhaniye Koyu", latitude: 36.78, longitude: 28.09, mouthDirection: 230)      // güneybatıya
-    static let selimiye = Cove(name: "Selimiye", latitude: 36.72, longitude: 28.10, mouthDirection: 180)           // güneye
-    static let bozukkale = Cove(name: "Bozukkale", latitude: 36.66, longitude: 28.08, mouthDirection: 180)        // güneye
-    static let sogutKoyu = Cove(name: "Söğüt Koyu", latitude: 36.73, longitude: 28.12, mouthDirection: 200)       // güneybatıya
-
-    // MARK: - Bozburun Yarımadası
-    static let bozburunLiman = Cove(name: "Bozburun Limanı", latitude: 36.67, longitude: 28.05, mouthDirection: 200) // güneybatıya
-    static let serçeLiman = Cove(name: "Serçe Limanı", latitude: 36.56, longitude: 28.08, mouthDirection: 180)     // güneye
-    static let taslica = Cove(name: "Taşlıca Koyu", latitude: 36.60, longitude: 28.06, mouthDirection: 220)       // güneybatıya
-    static let kizilkuyruk = Cove(name: "Kızılkuyruk Koyu", latitude: 36.58, longitude: 28.04, mouthDirection: 200) // güneybatıya
-
-    // MARK: - Marmaris Bölgesi
-    static let marmarisLiman = Cove(name: "Marmaris Limanı", latitude: 36.85, longitude: 28.27, mouthDirection: 250) // batıya
-    static let icmeler = Cove(name: "İçmeler", latitude: 36.83, longitude: 28.23, mouthDirection: 260)              // batıya
-    static let turunç = Cove(name: "Turunç", latitude: 36.79, longitude: 28.22, mouthDirection: 220)               // güneybatıya
-    static let kumlubuk = Cove(name: "Kumlubük", latitude: 36.78, longitude: 28.20, mouthDirection: 210)           // güneybatıya
-    static let cennetAdasi = Cove(name: "Cennet Adası", latitude: 36.82, longitude: 28.25, mouthDirection: 240)    // güneybatıya
-    static let ciftlik = Cove(name: "Çiftlik Koyu", latitude: 36.77, longitude: 28.17, mouthDirection: 200)        // güneybatıya
-
-    // MARK: - Gökova Körfezi
-    static let englishHarbour = Cove(name: "İngiliz Limanı", latitude: 36.93, longitude: 28.08, mouthDirection: 180) // güneye
-    static let longoz = Cove(name: "Longoz", latitude: 36.84, longitude: 28.13, mouthDirection: 200)                // güneybatıya
-    static let akcapinar = Cove(name: "Akçapınar", latitude: 36.95, longitude: 27.95, mouthDirection: 180)          // güneye
-
-    static let all: [Cove] = [
-        // Datça Kuzey
-        palamutbuku, hayitbuku, domuzCiftligi, kurucabuk, gebekum, kargi, bencik,
-        // Datça Güney
-        ovabuku, kizilbuk, mesudiye, datcaLiman, aktur,
-        // Knidos
-        knidos, knidosKuzey,
-        // Hisarönü
-        orhaniye, selimiye, bozukkale, sogutKoyu,
-        // Bozburun
-        bozburunLiman, serçeLiman, taslica, kizilkuyruk,
-        // Marmaris
-        marmarisLiman, icmeler, turunç, kumlubuk, cennetAdasi, ciftlik,
-        // Gökova
-        englishHarbour, longoz, akcapinar
-    ]
-}
 
 // MARK: - Wind Direction Names
 enum WindDirection {
@@ -335,35 +243,6 @@ extension RiskLevel {
     }
 }
 
-// MARK: - Shelter Level UI
-extension ShelterLevel {
-    var color: Color {
-        switch self {
-        case .excellent: return .green
-        case .good: return .blue
-        case .moderate: return .orange
-        case .poor: return .red
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .excellent: return "checkmark.shield.fill"
-        case .good: return "shield.fill"
-        case .moderate: return "exclamationmark.shield.fill"
-        case .poor: return "xmark.shield.fill"
-        }
-    }
-
-    var shortDescription: String {
-        switch self {
-        case .excellent: return "Tam korunaklı"
-        case .good: return "İyi korunaklı"
-        case .moderate: return "Kısmen korunaklı"
-        case .poor: return "Korunaksız"
-        }
-    }
-}
 
 // MARK: - Boat Type Icons
 extension BoatType {
