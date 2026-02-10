@@ -10,6 +10,9 @@ struct WindOverlayView: View {
     @State private var particles: [WindParticle] = []
     @State private var animationTimer: Timer?
     @State private var viewSize: CGSize = .zero
+    // Timer closure struct'i yakalayinca let windData eski kalir,
+    // @State ise SwiftUI storage uzerinden her zaman guncel deger dondurur
+    @State private var activeWindData: [WindGridPoint] = []
 
     private let particleCount = 800
 
@@ -20,6 +23,7 @@ struct WindOverlayView: View {
             }
             .onAppear {
                 viewSize = geometry.size
+                activeWindData = windData
                 initializeParticles(in: geometry.size)
                 startAnimation()
             }
@@ -30,6 +34,13 @@ struct WindOverlayView: View {
             .onChange(of: geometry.size) { _, newSize in
                 viewSize = newSize
                 initializeParticles(in: newSize)
+            }
+            .onChange(of: windData) { _, newData in
+                activeWindData = newData
+                // Eski yondeki kuyruk izlerini temizle, yeni yone hemen gecis
+                for i in particles.indices {
+                    particles[i].trail = []
+                }
             }
         }
         .allowsHitTesting(false)
@@ -168,7 +179,7 @@ struct WindOverlayView: View {
     // MARK: - Wind Interpolation (IDW)
 
     private func getWindAtPoint(_ point: CGPoint, in size: CGSize) -> WindGridPoint? {
-        guard !windData.isEmpty, size.width > 0, size.height > 0 else { return nil }
+        guard !activeWindData.isEmpty, size.width > 0, size.height > 0 else { return nil }
 
         // Ekran noktasini lat/lng'ye cevir
         let lng = mapRegion.center.longitude - mapRegion.span.longitudeDelta / 2 +
@@ -186,7 +197,7 @@ struct WindOverlayView: View {
         var dirXSum = 0.0
         var dirYSum = 0.0
 
-        for point in windData {
+        for point in activeWindData {
             let dist = sqrt(pow(lat - point.lat, 2) + pow(lng - point.lng, 2))
             if dist < 0.0001 {
                 return point
@@ -401,7 +412,7 @@ struct WindParticle {
     var trail: [CGPoint] = []
 }
 
-struct WindGridPoint {
+struct WindGridPoint: Equatable {
     let lat: Double
     let lng: Double
     let speed: Double
