@@ -1,6 +1,7 @@
 import Foundation
 import UserNotifications
 import AVFoundation
+import AudioToolbox
 
 final class NotificationManager {
     static let shared = NotificationManager()
@@ -141,7 +142,55 @@ final class NotificationManager {
         playAlertSound()
     }
 
+    // MARK: - Anchor Drag Alarm
+
+    func sendAnchorDragAlarm(drift: Double) {
+        let content = UNMutableNotificationContent()
+        content.title = "Demir Tarama Alarmi!"
+        content.body = String(format: "Tekne demir noktasindan %dm uzaklasti!", Int(drift))
+        content.sound = .defaultCritical
+        content.interruptionLevel = .critical
+
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.5, repeats: false)
+
+        let request = UNNotificationRequest(
+            identifier: "anchor-drag-\(UUID().uuidString)",
+            content: content,
+            trigger: trigger
+        )
+
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Anchor alarm notification error: \(error)")
+            }
+        }
+
+        // Kritik alarm sesi - sessiz modda bile duyulsun
+        playCriticalAlertSound()
+    }
+
     // MARK: - Audio
+
+    private func playCriticalAlertSound() {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(
+                .playback,
+                mode: .default,
+                options: [.duckOthers]
+            )
+            try AVAudioSession.sharedInstance().setActive(true)
+
+            // Tekrarlayan alarm sesi (3 kez)
+            for i in 0..<3 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.8) {
+                    AudioServicesPlaySystemSound(1005)
+                    AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+                }
+            }
+        } catch {
+            print("Critical audio error: \(error)")
+        }
+    }
 
     private func playAlertSound() {
         // Sistem sesi çal - ekran kapalıyken de çalışır

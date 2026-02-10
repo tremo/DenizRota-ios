@@ -43,6 +43,9 @@ struct MapView: View {
     )
     @State private var windGridLoadTask: Task<Void, Never>?
 
+    // Demir alarmi
+    @StateObject private var anchorAlarmManager = AnchorAlarmManager.shared
+
     // Otomatik hava durumu guncelleme timer'i (15 dakika)
     private let weatherRefreshTimer = Timer.publish(
         every: AppConstants.weatherAutoRefreshInterval,
@@ -60,6 +63,10 @@ struct MapView: View {
                 userLocation: locationManager.currentLocation,
                 activeRoute: activeRoute,
                 isRouteMode: isRouteMode,
+                anchorAlarmState: anchorAlarmManager.state,
+                anchorCenter: anchorAlarmManager.anchorCenter,
+                anchorRadius: anchorAlarmManager.radius,
+                isAlarmTriggered: anchorAlarmManager.isAlarmTriggered,
                 onTapCoordinate: { coordinate in
                     addWaypoint(at: coordinate)
                 },
@@ -69,6 +76,12 @@ struct MapView: View {
                 onRegionChanged: { region in
                     currentMapRegion = region
                     scheduleWindGridReload()
+                },
+                onAnchorCenterChanged: { coordinate in
+                    anchorAlarmManager.updateCenter(coordinate)
+                },
+                onAnchorRadiusChanged: { newRadius in
+                    anchorAlarmManager.updateRadius(newRadius)
                 }
             )
             .ignoresSafeArea(edges: .top)
@@ -158,6 +171,28 @@ struct MapView: View {
                                 }
                             }
                     }
+
+                    // Demir alarmi butonu - Sag ust
+                    Button {
+                        handleAnchorButtonTap()
+                    } label: {
+                        Image(systemName: anchorAlarmManager.state == .active ? "stop.fill" : "anchor")
+                            .font(.title3)
+                            .padding(10)
+                            .background(anchorButtonBackground)
+                            .foregroundStyle(anchorButtonForeground)
+                            .clipShape(Circle())
+                            .shadow(radius: 2)
+                            .overlay {
+                                if anchorAlarmManager.isAlarmTriggered {
+                                    Circle()
+                                        .stroke(Color.red, lineWidth: 2)
+                                        .scaleEffect(1.3)
+                                        .opacity(anchorAlarmManager.isAlarmTriggered ? 1 : 0)
+                                        .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: anchorAlarmManager.isAlarmTriggered)
+                                }
+                            }
+                    }
                     }
                     .padding(.trailing, 16)
                     .padding(.top, 8)
@@ -172,6 +207,13 @@ struct MapView: View {
 
                 Spacer()
 
+                // Demir alarmi tetiklenmis uyarisi
+                if anchorAlarmManager.isAlarmTriggered {
+                    AnchorAlarmBanner(drift: anchorAlarmManager.currentDrift)
+                        .padding(.horizontal, 16)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
                 // Ruzgar renk skalasi lejanti (sol alt)
                 if showWindOverlay && !windGridData.isEmpty {
                     HStack {
@@ -180,6 +222,32 @@ struct MapView: View {
                             .transition(.opacity)
                         Spacer()
                     }
+                }
+
+                // Demir alarmi aktif durum bilgisi
+                if anchorAlarmManager.state == .active {
+                    AnchorActiveInfoBar(
+                        radius: anchorAlarmManager.radius,
+                        drift: anchorAlarmManager.currentDrift
+                    )
+                    .padding(.horizontal, 16)
+                }
+
+                // Demir alarmi draft kontrolleri
+                if anchorAlarmManager.state == .drafting {
+                    AnchorDraftControlsBar(
+                        radius: $anchorAlarmManager.radius,
+                        onConfirm: {
+                            anchorAlarmManager.activateAlarm()
+                            locationManager.startLocationUpdates()
+                        },
+                        onCancel: {
+                            anchorAlarmManager.cancelDrafting()
+                            locationManager.stopLocationUpdatesIfNeeded()
+                        }
+                    )
+                    .padding(.horizontal, 16)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
                 // Alt butonlar
@@ -511,6 +579,51 @@ struct MapView: View {
         }
     }
 
+    // MARK: - Anchor Alarm
+
+    private var anchorButtonBackground: AnyShapeStyle {
+        switch anchorAlarmManager.state {
+        case .idle:
+            return AnyShapeStyle(.ultraThinMaterial)
+        case .drafting:
+            return AnyShapeStyle(Color.orange)
+        case .active:
+            return anchorAlarmManager.isAlarmTriggered
+                ? AnyShapeStyle(Color.red)
+                : AnyShapeStyle(Color.green)
+        }
+    }
+
+    private var anchorButtonForeground: Color {
+        anchorAlarmManager.state == .idle ? .primary : .white
+    }
+
+    private func handleAnchorButtonTap() {
+        switch anchorAlarmManager.state {
+        case .idle:
+            // Draft modunu baslat - mevcut konumu merkez al
+            guard let location = locationManager.currentLocation else { return }
+            withAnimation(.easeInOut(duration: 0.25)) {
+                anchorAlarmManager.startDrafting(at: location.coordinate)
+            }
+            locationManager.startLocationUpdates()
+
+        case .drafting:
+            // Draft modundayken tekrar basilirsa iptal et
+            withAnimation(.easeInOut(duration: 0.25)) {
+                anchorAlarmManager.cancelDrafting()
+            }
+            locationManager.stopLocationUpdatesIfNeeded()
+
+        case .active:
+            // Aktif alarmi durdur
+            withAnimation(.easeInOut(duration: 0.25)) {
+                anchorAlarmManager.deactivateAlarm()
+            }
+            locationManager.stopLocationUpdatesIfNeeded()
+        }
+    }
+
     // MARK: - Wind Grid
 
     /// Ruzgar grid verisini yukle (Windy-tarzi animasyon icin)
@@ -705,6 +818,148 @@ struct PermissionOverlay: View {
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .padding(40)
+    }
+}
+
+// MARK: - Anchor Alarm Banner (tetiklenmis uyari)
+
+struct AnchorAlarmBanner: View {
+    let drift: Double
+
+    @State private var isFlashing = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.title2)
+                .foregroundStyle(.white)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("DEMIR TARAMA!")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.white)
+                Text("Tekne \(Int(drift))m uzaklasti")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+
+            Spacer()
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.red)
+                .opacity(isFlashing ? 1.0 : 0.7)
+        )
+        .shadow(color: .red.opacity(0.4), radius: 8, y: 2)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
+                isFlashing = true
+            }
+        }
+    }
+}
+
+// MARK: - Anchor Active Info Bar
+
+struct AnchorActiveInfoBar: View {
+    let radius: Double
+    let drift: Double
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "anchor.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.green)
+
+            Text("Demir Alarmi Aktif")
+                .font(.subheadline.bold())
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("Yaricap: \(Int(radius))m")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Sapma: \(Int(drift))m")
+                    .font(.caption)
+                    .foregroundStyle(drift > radius * 0.7 ? .orange : .secondary)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+// MARK: - Anchor Draft Controls Bar
+
+struct AnchorDraftControlsBar: View {
+    @Binding var radius: Double
+
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(spacing: 10) {
+            // Yaricap slider
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.left.and.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Slider(value: $radius, in: 10...500, step: 5)
+                    .tint(.blue)
+
+                Text("\(Int(radius))m")
+                    .font(.subheadline.bold())
+                    .frame(width: 50, alignment: .trailing)
+            }
+
+            // Butonlar
+            HStack(spacing: 16) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        onCancel()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "xmark")
+                        Text("Vazgec")
+                    }
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Capsule())
+                }
+
+                Spacer()
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        onConfirm()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark")
+                        Text("Alarmi Kur")
+                    }
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(Color.green)
+                    .clipShape(Capsule())
+                    .shadow(radius: 2)
+                }
+            }
+        }
+        .padding(14)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
 

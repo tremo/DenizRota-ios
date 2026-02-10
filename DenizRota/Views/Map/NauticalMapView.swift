@@ -1,5 +1,6 @@
 import SwiftUI
 import MapKit
+import AudioToolbox
 
 // MARK: - Map Style Option
 
@@ -55,6 +56,38 @@ class UserLocationAnnotation: NSObject, MKAnnotation {
     }
 }
 
+// MARK: - Anchor Alarm Annotations
+
+class AnchorCenterAnnotation: NSObject, MKAnnotation {
+    dynamic var coordinate: CLLocationCoordinate2D
+
+    init(coordinate: CLLocationCoordinate2D) {
+        self.coordinate = coordinate
+    }
+}
+
+class AnchorRadiusHandleAnnotation: NSObject, MKAnnotation {
+    dynamic var coordinate: CLLocationCoordinate2D
+
+    init(coordinate: CLLocationCoordinate2D) {
+        self.coordinate = coordinate
+    }
+}
+
+class AnchorRadiusLabelAnnotation: NSObject, MKAnnotation {
+    dynamic var coordinate: CLLocationCoordinate2D
+    var radius: Double = 50
+
+    init(coordinate: CLLocationCoordinate2D, radius: Double) {
+        self.coordinate = coordinate
+        self.radius = radius
+    }
+}
+
+// MARK: - Anchor Circle Overlay
+
+class AnchorCircleOverlay: MKCircle {}
+
 // MARK: - OpenSeaMap Tile Overlay
 
 class OpenSeaMapOverlay: MKTileOverlay {}
@@ -70,9 +103,17 @@ struct NauticalMapView: UIViewRepresentable {
     var activeRoute: Route?
     var isRouteMode: Bool
 
+    // Anchor alarm
+    var anchorAlarmState: AnchorAlarmState = .idle
+    var anchorCenter: CLLocationCoordinate2D?
+    var anchorRadius: Double = 50
+    var isAlarmTriggered: Bool = false
+
     var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
     var onDeleteWaypoint: ((Waypoint) -> Void)?
     var onRegionChanged: ((MKCoordinateRegion) -> Void)?
+    var onAnchorCenterChanged: ((CLLocationCoordinate2D) -> Void)?
+    var onAnchorRadiusChanged: ((Double) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -127,6 +168,7 @@ struct NauticalMapView: UIViewRepresentable {
         updateRegion(mapView, context: context)
         updateAnnotations(mapView)
         updateRouteOverlay(mapView)
+        updateAnchorOverlay(mapView, context: context)
     }
 
     // MARK: - OpenSeaMap
@@ -238,6 +280,122 @@ struct NauticalMapView: UIViewRepresentable {
         mapView.addOverlay(polyline, level: .aboveRoads)
     }
 
+    // MARK: - Anchor Overlay
+
+    private func updateAnchorOverlay(_ mapView: MKMapView, context: Context) {
+        let coordinator = context.coordinator
+
+        if anchorAlarmState == .idle {
+            // Tum anchor elemanlarini temizle
+            removeAnchorElements(from: mapView, coordinator: coordinator)
+            return
+        }
+
+        guard let center = anchorCenter else {
+            removeAnchorElements(from: mapView, coordinator: coordinator)
+            return
+        }
+
+        // --- Circle Overlay ---
+        // Mevcut circle'i kaldir ve yeniden ekle (radius degismis olabilir)
+        for overlay in mapView.overlays where overlay is AnchorCircleOverlay {
+            mapView.removeOverlay(overlay)
+        }
+
+        let circle = AnchorCircleOverlay(center: center, radius: anchorRadius)
+        mapView.addOverlay(circle, level: .aboveRoads)
+
+        // --- Center Annotation ---
+        let existingCenters = mapView.annotations.compactMap { $0 as? AnchorCenterAnnotation }
+        if let existing = existingCenters.first {
+            UIView.animate(withDuration: 0.2) {
+                existing.coordinate = center
+            }
+        } else {
+            let annotation = AnchorCenterAnnotation(coordinate: center)
+            mapView.addAnnotation(annotation)
+        }
+
+        // --- Radius Handle (sadece drafting modunda) ---
+        let existingHandles = mapView.annotations.compactMap { $0 as? AnchorRadiusHandleAnnotation }
+        if anchorAlarmState == .drafting {
+            let handleCoord = coordinateFromCenter(center, distanceMeters: anchorRadius, bearing: 90)
+            if let existing = existingHandles.first {
+                UIView.animate(withDuration: 0.2) {
+                    existing.coordinate = handleCoord
+                }
+            } else {
+                let handle = AnchorRadiusHandleAnnotation(coordinate: handleCoord)
+                mapView.addAnnotation(handle)
+            }
+        } else {
+            existingHandles.forEach { mapView.removeAnnotation($0) }
+        }
+
+        // --- Radius Label ---
+        let existingLabels = mapView.annotations.compactMap { $0 as? AnchorRadiusLabelAnnotation }
+        let labelCoord = coordinateFromCenter(center, distanceMeters: anchorRadius, bearing: 0)
+        if let existing = existingLabels.first {
+            existing.radius = anchorRadius
+            UIView.animate(withDuration: 0.2) {
+                existing.coordinate = labelCoord
+            }
+            // Label guncelle
+            if let view = mapView.view(for: existing) {
+                view.image = Self.renderRadiusLabel(radius: anchorRadius)
+            }
+        } else {
+            let label = AnchorRadiusLabelAnnotation(coordinate: labelCoord, radius: anchorRadius)
+            mapView.addAnnotation(label)
+        }
+
+        // Drag gesture'lari ayarla (sadece drafting modunda)
+        coordinator.setupAnchorGestures(mapView: mapView, isDrafting: anchorAlarmState == .drafting)
+    }
+
+    private func removeAnchorElements(from mapView: MKMapView, coordinator: Coordinator) {
+        for overlay in mapView.overlays where overlay is AnchorCircleOverlay {
+            mapView.removeOverlay(overlay)
+        }
+        mapView.annotations.compactMap { $0 as? AnchorCenterAnnotation }.forEach {
+            mapView.removeAnnotation($0)
+        }
+        mapView.annotations.compactMap { $0 as? AnchorRadiusHandleAnnotation }.forEach {
+            mapView.removeAnnotation($0)
+        }
+        mapView.annotations.compactMap { $0 as? AnchorRadiusLabelAnnotation }.forEach {
+            mapView.removeAnnotation($0)
+        }
+        coordinator.removeAnchorGestures(from: mapView)
+    }
+
+    /// Merkez koordinattan belirli mesafe ve yon ile yeni koordinat hesapla
+    private func coordinateFromCenter(
+        _ center: CLLocationCoordinate2D,
+        distanceMeters: Double,
+        bearing: Double
+    ) -> CLLocationCoordinate2D {
+        let earthRadius = 6_371_000.0 // metre
+        let angularDistance = distanceMeters / earthRadius
+        let bearingRad = bearing * .pi / 180.0
+        let lat1 = center.latitude * .pi / 180.0
+        let lng1 = center.longitude * .pi / 180.0
+
+        let lat2 = asin(
+            sin(lat1) * cos(angularDistance) +
+            cos(lat1) * sin(angularDistance) * cos(bearingRad)
+        )
+        let lng2 = lng1 + atan2(
+            sin(bearingRad) * sin(angularDistance) * cos(lat1),
+            cos(angularDistance) - sin(lat1) * sin(lat2)
+        )
+
+        return CLLocationCoordinate2D(
+            latitude: lat2 * 180.0 / .pi,
+            longitude: lng2 * 180.0 / .pi
+        )
+    }
+
     // MARK: - Rendering Helpers
 
     static func renderWaypointImage(number: Int, riskLevel: RiskLevel, isLoading: Bool) -> UIImage {
@@ -297,6 +455,81 @@ struct NauticalMapView: UIViewRepresentable {
         }
     }
 
+    // MARK: - Anchor Rendering Helpers
+
+    static func renderAnchorCenterImage(isTriggered: Bool) -> UIImage {
+        let size: CGFloat = 44
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+        return renderer.image { ctx in
+            let bgColor: UIColor = isTriggered ? .systemRed : .systemBlue
+            bgColor.withAlphaComponent(0.15).setFill()
+            ctx.cgContext.fillEllipse(in: CGRect(x: 0, y: 0, width: size, height: size))
+
+            bgColor.setFill()
+            let innerSize: CGFloat = 28
+            let innerOrigin = (size - innerSize) / 2
+            ctx.cgContext.fillEllipse(in: CGRect(x: innerOrigin, y: innerOrigin, width: innerSize, height: innerSize))
+
+            UIColor.white.setStroke()
+            ctx.cgContext.setLineWidth(2)
+            ctx.cgContext.strokeEllipse(in: CGRect(x: innerOrigin, y: innerOrigin, width: innerSize, height: innerSize))
+
+            // Capa ikonu (basit)
+            let iconAttrs: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 16, weight: .bold),
+                .foregroundColor: UIColor.white
+            ]
+            let icon = "⚓"
+            let iconSize = icon.size(withAttributes: iconAttrs)
+            let iconPoint = CGPoint(
+                x: (size - iconSize.width) / 2,
+                y: (size - iconSize.height) / 2
+            )
+            icon.draw(at: iconPoint, withAttributes: iconAttrs)
+        }
+    }
+
+    static func renderRadiusHandleImage() -> UIImage {
+        let size: CGFloat = 28
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+        return renderer.image { ctx in
+            UIColor.white.setFill()
+            ctx.cgContext.setShadow(offset: CGSize(width: 0, height: 1), blur: 3,
+                                   color: UIColor.black.withAlphaComponent(0.3).cgColor)
+            ctx.cgContext.fillEllipse(in: CGRect(x: 2, y: 2, width: size - 4, height: size - 4))
+
+            ctx.cgContext.setShadow(offset: .zero, blur: 0)
+            UIColor.systemBlue.setFill()
+            let dotSize: CGFloat = 10
+            let dotOrigin = (size - dotSize) / 2
+            ctx.cgContext.fillEllipse(in: CGRect(x: dotOrigin, y: dotOrigin, width: dotSize, height: dotSize))
+        }
+    }
+
+    static func renderRadiusLabel(radius: Double) -> UIImage {
+        let text = "\(Int(radius))m"
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 13, weight: .semibold),
+            .foregroundColor: UIColor.white
+        ]
+        let textSize = text.size(withAttributes: attrs)
+        let padding: CGFloat = 8
+        let size = CGSize(width: textSize.width + padding * 2, height: textSize.height + padding)
+
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { ctx in
+            ctx.cgContext.setShadow(offset: CGSize(width: 0, height: 1), blur: 2,
+                                   color: UIColor.black.withAlphaComponent(0.3).cgColor)
+            UIColor.systemBlue.withAlphaComponent(0.85).setFill()
+            let path = UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 6)
+            path.fill()
+
+            ctx.cgContext.setShadow(offset: .zero, blur: 0)
+            let textPoint = CGPoint(x: padding, y: padding / 2)
+            text.draw(at: textPoint, withAttributes: attrs)
+        }
+    }
+
     // MARK: - Coordinator
 
     class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
@@ -307,19 +540,123 @@ struct NauticalMapView: UIViewRepresentable {
         var calloutHostingController: UIHostingController<WaypointCalloutContent>?
         var selectedWaypointAnnotation: WaypointAnnotation?
 
+        // Anchor alarm gesture state
+        private var anchorPanGesture: UIPanGestureRecognizer?
+        private var isDraggingAnchorCenter = false
+        private var isDraggingRadiusHandle = false
+        private var dragStartCoordinate: CLLocationCoordinate2D?
+
+        // MARK: - Anchor Gesture Setup
+
+        func setupAnchorGestures(mapView: MKMapView, isDrafting: Bool) {
+            if isDrafting && anchorPanGesture == nil {
+                let pan = UIPanGestureRecognizer(target: self, action: #selector(handleAnchorPan(_:)))
+                pan.delegate = self
+                mapView.addGestureRecognizer(pan)
+                anchorPanGesture = pan
+            } else if !isDrafting {
+                removeAnchorGestures(from: mapView)
+            }
+        }
+
+        func removeAnchorGestures(from mapView: MKMapView) {
+            if let gesture = anchorPanGesture {
+                mapView.removeGestureRecognizer(gesture)
+                anchorPanGesture = nil
+            }
+            isDraggingAnchorCenter = false
+            isDraggingRadiusHandle = false
+        }
+
+        @objc func handleAnchorPan(_ gesture: UIPanGestureRecognizer) {
+            guard let mapView = gesture.view as? MKMapView else { return }
+
+            let point = gesture.location(in: mapView)
+            let coordinate = mapView.convert(point, toCoordinateFrom: mapView)
+
+            switch gesture.state {
+            case .began:
+                // Hangi elemani surukledigimizi belirle
+                if let handleAnnotation = mapView.annotations.first(where: { $0 is AnchorRadiusHandleAnnotation }),
+                   let handleView = mapView.view(for: handleAnnotation) {
+                    let handlePoint = gesture.location(in: handleView)
+                    let hitArea = handleView.bounds.insetBy(dx: -20, dy: -20)
+                    if hitArea.contains(handlePoint) {
+                        isDraggingRadiusHandle = true
+                        mapView.isScrollEnabled = false
+                        return
+                    }
+                }
+
+                if let centerAnnotation = mapView.annotations.first(where: { $0 is AnchorCenterAnnotation }),
+                   let centerView = mapView.view(for: centerAnnotation) {
+                    let centerPoint = gesture.location(in: centerView)
+                    let hitArea = centerView.bounds.insetBy(dx: -20, dy: -20)
+                    if hitArea.contains(centerPoint) {
+                        isDraggingAnchorCenter = true
+                        mapView.isScrollEnabled = false
+                        return
+                    }
+                }
+
+            case .changed:
+                if isDraggingAnchorCenter {
+                    parent?.onAnchorCenterChanged?(coordinate)
+                } else if isDraggingRadiusHandle {
+                    guard let center = parent?.anchorCenter else { return }
+                    let centerLocation = CLLocation(latitude: center.latitude, longitude: center.longitude)
+                    let handleLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                    let newRadius = centerLocation.distance(from: handleLocation)
+                    parent?.onAnchorRadiusChanged?(newRadius)
+                }
+
+            case .ended, .cancelled:
+                isDraggingAnchorCenter = false
+                isDraggingRadiusHandle = false
+                mapView.isScrollEnabled = true
+
+            default:
+                break
+            }
+        }
+
         // MARK: - UIGestureRecognizerDelegate
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            // Anchor pan gesture: sadece anchor/handle uzerindeyse basla
+            if gestureRecognizer === anchorPanGesture {
+                guard let mapView = gestureRecognizer.view as? MKMapView else { return false }
+                let point = gestureRecognizer.location(in: mapView)
+
+                // Handle uzerinde mi?
+                if let handleAnnotation = mapView.annotations.first(where: { $0 is AnchorRadiusHandleAnnotation }),
+                   let handleView = mapView.view(for: handleAnnotation) {
+                    let handlePoint = gestureRecognizer.location(in: handleView)
+                    if handleView.bounds.insetBy(dx: -20, dy: -20).contains(handlePoint) {
+                        return true
+                    }
+                }
+
+                // Center uzerinde mi?
+                if let centerAnnotation = mapView.annotations.first(where: { $0 is AnchorCenterAnnotation }),
+                   let centerView = mapView.view(for: centerAnnotation) {
+                    let centerPoint = gestureRecognizer.location(in: centerView)
+                    if centerView.bounds.insetBy(dx: -20, dy: -20).contains(centerPoint) {
+                        return true
+                    }
+                }
+
+                return false
+            }
+
+            // Tap gesture: rota modu icin
             guard let parent = parent, parent.isRouteMode,
                   let mapView = gestureRecognizer.view as? MKMapView else {
-                // Not in route mode - let MKMapView handle taps (annotation selection etc.)
                 return false
             }
 
             let point = gestureRecognizer.location(in: mapView)
 
-            // Don't recognize if tap is on an existing annotation
-            // Let MKMapView handle it so didSelect fires
             for annotation in mapView.annotations {
                 if let view = mapView.view(for: annotation) {
                     let pointInView = view.convert(point, from: mapView)
@@ -330,6 +667,17 @@ struct NauticalMapView: UIViewRepresentable {
             }
 
             return true
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            // Anchor pan ile harita scroll ayni anda calismasin
+            if gestureRecognizer === anchorPanGesture || otherGestureRecognizer === anchorPanGesture {
+                return false
+            }
+            return false
         }
 
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
@@ -345,6 +693,19 @@ struct NauticalMapView: UIViewRepresentable {
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let tileOverlay = overlay as? MKTileOverlay {
                 return MKTileOverlayRenderer(overlay: tileOverlay)
+            }
+
+            if let anchorCircle = overlay as? AnchorCircleOverlay {
+                let renderer = MKCircleRenderer(circle: anchorCircle)
+                let isTriggered = parent?.isAlarmTriggered ?? false
+                let isActive = parent?.anchorAlarmState == .active
+                renderer.strokeColor = isTriggered ? .systemRed : .systemBlue
+                renderer.fillColor = isTriggered
+                    ? UIColor.systemRed.withAlphaComponent(0.08)
+                    : UIColor.systemBlue.withAlphaComponent(0.08)
+                renderer.lineWidth = isActive ? 3 : 2
+                renderer.lineDashPattern = isActive ? nil : [8, 6]
+                return renderer
             }
 
             if let polyline = overlay as? MKPolyline {
@@ -385,6 +746,49 @@ struct NauticalMapView: UIViewRepresentable {
                 view.canShowCallout = false
                 view.image = NauticalMapView.renderUserLocationImage()
                 view.centerOffset = CGPoint(x: 0, y: 0)
+
+                return view
+            }
+
+            if annotation is AnchorCenterAnnotation {
+                let identifier = "AnchorCenter"
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) ??
+                    MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
+
+                view.annotation = annotation
+                view.canShowCallout = false
+                let isTriggered = parent?.isAlarmTriggered ?? false
+                view.image = NauticalMapView.renderAnchorCenterImage(isTriggered: isTriggered)
+                view.centerOffset = CGPoint(x: 0, y: 0)
+                view.isDraggable = false
+                view.zPriority = .max
+
+                return view
+            }
+
+            if annotation is AnchorRadiusHandleAnnotation {
+                let identifier = "AnchorHandle"
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) ??
+                    MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
+
+                view.annotation = annotation
+                view.canShowCallout = false
+                view.image = NauticalMapView.renderRadiusHandleImage()
+                view.centerOffset = CGPoint(x: 0, y: 0)
+                view.isDraggable = false
+
+                return view
+            }
+
+            if let labelAnnotation = annotation as? AnchorRadiusLabelAnnotation {
+                let identifier = "AnchorLabel"
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) ??
+                    MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
+
+                view.annotation = annotation
+                view.canShowCallout = false
+                view.image = NauticalMapView.renderRadiusLabel(radius: labelAnnotation.radius)
+                view.centerOffset = CGPoint(x: 0, y: -10)
 
                 return view
             }

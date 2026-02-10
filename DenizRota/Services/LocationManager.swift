@@ -78,8 +78,27 @@ final class LocationManager: NSObject, ObservableObject {
         print("Trip tracking started")
     }
 
-    func stopTracking() -> TripResult? {
+    /// Demir alarmi icin konum guncellemelerini baslat (trip tracking olmadan)
+    func startLocationUpdates() {
+        guard hasAnyPermission else {
+            requestPermission()
+            return
+        }
+        locationManager.startUpdatingLocation()
+    }
+
+    /// Demir alarmi icin konum guncellemelerini durdur (sadece tracking de aktif degilse)
+    func stopLocationUpdatesIfNeeded() {
+        guard !isTracking else { return }
+        guard AnchorAlarmManager.shared.state != .active else { return }
         locationManager.stopUpdatingLocation()
+    }
+
+    func stopTracking() -> TripResult? {
+        // Demir alarmi aktifse konum guncellemelerini durdurma
+        if AnchorAlarmManager.shared.state != .active {
+            locationManager.stopUpdatingLocation()
+        }
         isTracking = false
 
         guard let startTime = tripStartTime else { return nil }
@@ -167,6 +186,9 @@ extension LocationManager: CLLocationManagerDelegate {
             // Waypoint yakınlık kontrolü
             checkWaypointProximity(location)
         }
+
+        // Demir alarmi kontrolu (tracking bagimsiz, her zaman calisir)
+        AnchorAlarmManager.shared.checkLocation(location)
     }
 
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
