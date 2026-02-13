@@ -112,6 +112,7 @@ struct NauticalMapView: UIViewRepresentable {
     var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
     var onDeleteWaypoint: ((Waypoint) -> Void)?
     var onRegionChanged: ((MKCoordinateRegion) -> Void)?
+    var onHeadingChanged: ((Double) -> Void)?
     var onAnchorCenterChanged: ((CLLocationCoordinate2D) -> Void)?
     var onAnchorRadiusChanged: ((Double) -> Void)?
 
@@ -818,6 +819,7 @@ struct NauticalMapView: UIViewRepresentable {
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
             updateCalloutPosition(in: mapView)
             parent?.onRegionChanged?(mapView.region)
+            parent?.onHeadingChanged?(mapView.camera.heading)
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
