@@ -115,13 +115,15 @@ actor WeatherService {
     // MARK: - Cache
 
     private func cacheKey(for coordinate: CLLocationCoordinate2D, date: Date) -> String {
-        // 0.01 derece grid (yaklaşık 1km) + saat bilgisi
+        // 0.01 derece grid (yaklaşık 1km) + tarih/saat bilgisi
         let lat = (coordinate.latitude * 100).rounded() / 100
         let lng = (coordinate.longitude * 100).rounded() / 100
         let calendar = Calendar.current
-        let hour = calendar.component(.hour, from: date)
+        let year = calendar.component(.year, from: date)
+        let month = calendar.component(.month, from: date)
         let day = calendar.component(.day, from: date)
-        return "\(lat),\(lng),\(day),\(hour)"
+        let hour = calendar.component(.hour, from: date)
+        return "\(lat),\(lng),\(year)-\(month)-\(day),\(hour)"
     }
 
     func clearCache() {

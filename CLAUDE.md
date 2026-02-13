@@ -760,6 +760,58 @@ Her madde bagimsiz olarak uygulanabilir.
 
 ---
 
+### BUG-1: Ruzgar Overlay Harita Donduruldugunde Yanlis Yon Gosteriyor [YUKSEK]
+**Durum:** Yapilmadi
+**Dosyalar:** `Views/Map/MapOverlays.swift` (satir 184-188)
+**Sorun:** WindOverlayView ekran koordinatlarini lat/lng'ye cevirirken basit lineer haritalama kullaniyor. MKMapView kullanici tarafindan dondurulebildigi icin, MKCoordinateRegion gorunen alani kapsayan en kucuk eksen-hizali dikdortgeni temsil eder. Partikullerin ekrandaki hareket yonu, haritanin gercek yonuyle uyusmaz.
+**Yapilacak:**
+1. NauticalMapView'dan MKMapView referansini WindOverlayView'a gecir (veya harita heading/rotation bilgisini aktar)
+2. `getWindAtPoint()` icinde `MKMapView.convert(_:toCoordinateFrom:)` kullanarak ekran koordinatlarini gercek koordinatlara cevir
+3. Alternatif: Harita heading degerini alip partikul hareket yonune uygula (ters dondurme)
+
+---
+
+### BUG-2: TripManager ve LocationManager Cift Tracking [YUKSEK]
+**Durum:** Yapilmadi
+**Dosyalar:** `Managers/TripManager.swift` (satir 83), `Services/LocationManager.swift`
+**Sorun:** TripManager.startTrip() icinde locationManager.startTracking() cagriliyor. LocationManager kendi tripPositions dizisine kaydediyor, TripManager da setupLocationObserver() ile $currentLocation dinleyerek kendi positions dizisine kaydediyor. Ayni pozisyonlar iki kere farkli filtrelerle kaydediliyor.
+**Yapilacak:**
+1. TripManager'in tek tracking kaynagi olmasi icin LocationManager.startTracking() yerine sadece LocationManager.startLocationUpdates() kullanilmali
+2. Veya LocationManager.startTracking() icindeki pozisyon kaydetme kaldirılıp sadece TripManager'a birakilmali
+3. TODO-6 ile birlikte ele alinabilir (TripManager entegrasyonu)
+
+---
+
+### BUG-3: Kucuk Ekranlarda UI Elementleri Ust Uste Gelebilir [ORTA]
+**Durum:** Yapilmadi
+**Dosyalar:** `Views/Map/MapView.swift` (satir 99-363)
+**Sorun:** MapView body'sindeki VStack'te ust butonlar (~192pt) ve alt icerik (~316pt) toplami, iPhone SE gibi kucuk ekranlarda (~397pt kullanilabilir alan) Spacer'i sifira dusurup elementlerin ust uste binmesine neden oluyor.
+**Yapilacak:**
+1. Alt butonlar ve overlay'lar icin ScrollView veya GeometryReader ile dinamik boyutlandirma
+2. Kucuk ekranlarda bazi elementleri gizle veya kucult (ornegin WindLegendView'i collapse yap)
+3. Alternatif: Ruzgar lejanti ve anchor alarm bilgisini ayni satirda goster
+
+---
+
+### BUG-4: Hardcoded Yakit Deger/Fiyat [ORTA]
+**Durum:** Yapilmadi (TODO-9 olarak da belgelenmis)
+**Dosyalar:** `Views/Map/MapView.swift` (satir 574)
+**Sorun:** `trip.calculateStats(fuelRate: 20, fuelPrice: 45)` - Kullanicinin BoatSettings'teki yakit tuketimi ve fiyat ayarlari yok sayilir.
+**Yapilacak:** TODO-9 ile ayni - BoatSettings'ten degerleri oku.
+
+---
+
+### BUG-5: GPS Jump Filtresi Sadece Tracking Aktifken Calisiyor [ORTA]
+**Durum:** Yapilmadi
+**Dosyalar:** `Services/LocationManager.swift` (satir 164-169)
+**Sorun:** tripPositions sadece tracking aktifken dolu oldugu icin, tracking aktif degilken jump filtresi calismaz. currentLocation ani sicramalar gosterebilir ve demir alarmi yanlis tetiklenebilir.
+**Yapilacak:**
+1. Jump filtresi icin tracking'den bagimsiz bir `lastValidLocation` property'si ekle
+2. `processLocation()` icinde `tripPositions.last` yerine `lastValidLocation` ile mesafe kontrolu yap
+3. Her basarili GPS guncellemesinde `lastValidLocation`'i guncelle
+
+---
+
 ## Öncelikli Geliştirme Yol Haritası
 
 ### Kısa Vadeli (1-2 Hafta)
@@ -776,6 +828,13 @@ Her madde bagimsiz olarak uygulanabilir.
 8. **TODO-10**: Offline cache - Kıyı bölgelerinde sinyal zayıf
 9. **TODO-11**: Risk eşikleri tekne tipine göre - Gelişmiş özellik
 10. **TODO-12**: Bookmark sistemi - Community istek
+
+### Bug Düzeltmeleri
+- **BUG-1**: Rüzgar overlay harita döndürüldüğünde yanlış yön
+- **BUG-2**: TripManager/LocationManager çift tracking
+- **BUG-3**: Küçük ekranlarda UI çakışması
+- **BUG-4**: Hardcoded yakıt değerleri (= TODO-9)
+- **BUG-5**: GPS jump filtresi tracking dışında çalışmıyor
 
 ### Teknik Borç
 - RouteManager ve MapView arasında kod tekrarı (iki paralel sistem)

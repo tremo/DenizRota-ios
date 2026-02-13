@@ -54,9 +54,9 @@ struct SeaArea {
 
 enum SeaAreas {
     static let marmara = SeaArea(name: "Marmara", minLat: 40.3, maxLat: 41.1, minLng: 26.5, maxLng: 29.9)
-    static let ege = SeaArea(name: "Ege", minLat: 36.5, maxLat: 40.3, minLng: 25.5, maxLng: 27.5)
+    static let ege = SeaArea(name: "Ege", minLat: 36.5, maxLat: 40.3, minLng: 25.5, maxLng: 28.3)
     static let karadeniz = SeaArea(name: "Karadeniz", minLat: 41.0, maxLat: 43.0, minLng: 28.0, maxLng: 41.5)
-    static let akdeniz = SeaArea(name: "Akdeniz", minLat: 35.5, maxLat: 37.0, minLng: 27.5, maxLng: 36.5)
+    static let akdeniz = SeaArea(name: "Akdeniz", minLat: 35.5, maxLat: 37.1, minLng: 27.5, maxLng: 36.5)
     static let bogaz = SeaArea(name: "Boğaz", minLat: 40.9, maxLat: 41.3, minLng: 28.9, maxLng: 29.2)
 
     static let all: [SeaArea] = [marmara, ege, karadeniz, akdeniz, bogaz]
@@ -175,8 +175,8 @@ enum CoastlineData {
         (29.55, 36.10), (29.55, 36.13)
     ]
 
-    // Tüm kıyı noktaları
-    static var allPoints: [(lng: Double, lat: Double)] {
+    // Tüm kıyı noktaları (bir kez hesaplanir, sonra cache'lenir)
+    static let allPoints: [(lng: Double, lat: Double)] = {
         var points: [(lng: Double, lat: Double)] = []
         points.append(contentsOf: datcaNorth)
         points.append(contentsOf: datcaSouth)
@@ -191,7 +191,7 @@ enum CoastlineData {
         points.append(contentsOf: kas)
         points.append(contentsOf: meis)
         return points
-    }
+    }()
 }
 
 
@@ -200,13 +200,15 @@ enum WindDirection {
     static let directions = ["K", "KD", "D", "GD", "G", "GB", "B", "KB"]
 
     static func name(for degrees: Double) -> String {
-        let index = Int(round(degrees / 45.0)) % 8
+        let normalized = ((degrees.truncatingRemainder(dividingBy: 360)) + 360).truncatingRemainder(dividingBy: 360)
+        let index = Int(round(normalized / 45.0)) % 8
         return directions[index]
     }
 
     static func fullName(for degrees: Double) -> String {
         let names = ["Kuzey", "Kuzeydoğu", "Doğu", "Güneydoğu", "Güney", "Güneybatı", "Batı", "Kuzeybatı"]
-        let index = Int(round(degrees / 45.0)) % 8
+        let normalized = ((degrees.truncatingRemainder(dividingBy: 360)) + 360).truncatingRemainder(dividingBy: 360)
+        let index = Int(round(normalized / 45.0)) % 8
         return names[index]
     }
 }

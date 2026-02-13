@@ -34,11 +34,14 @@ final class Trip {
 
         duration = endDate.timeIntervalSince(startDate)
 
+        // Pozisyonlari kronolojik sirala (SwiftData relationship sirasiz olabilir)
+        let sortedPositions = positions.sorted { $0.timestamp < $1.timestamp }
+
         // Mesafe hesapla
         var totalDistance: Double = 0
-        for i in 1..<positions.count {
-            let prev = positions[i-1].location
-            let curr = positions[i].location
+        for i in 1..<sortedPositions.count {
+            let prev = sortedPositions[i-1].location
+            let curr = sortedPositions[i].location
             totalDistance += curr.distance(from: prev)
         }
         distance = totalDistance / 1000 // meters -> km
