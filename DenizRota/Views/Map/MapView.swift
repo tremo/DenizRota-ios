@@ -43,6 +43,7 @@ struct MapView: View {
     )
     @State private var windGridLoadTask: Task<Void, Never>?
     @State private var routeWeatherLoadTask: Task<Void, Never>?
+    @State private var mapHeading: Double = 0
 
     // Demir alarmi
     @StateObject private var anchorAlarmManager = AnchorAlarmManager.shared
@@ -78,6 +79,9 @@ struct MapView: View {
                     currentMapRegion = region
                     scheduleWindGridReload()
                 },
+                onHeadingChanged: { heading in
+                    mapHeading = heading
+                },
                 onAnchorCenterChanged: { coordinate in
                     anchorAlarmManager.updateCenter(coordinate)
                 },
@@ -91,7 +95,8 @@ struct MapView: View {
             if showWindOverlay && !windGridData.isEmpty {
                 WindOverlayView(
                     windData: windGridData,
-                    mapRegion: currentMapRegion
+                    mapRegion: currentMapRegion,
+                    mapHeading: mapHeading
                 )
                 .ignoresSafeArea(edges: .top)
                 .allowsHitTesting(false)

@@ -7,12 +7,14 @@ import MapKit
 struct WindOverlayView: View {
     let windData: [WindGridPoint]
     let mapRegion: MKCoordinateRegion
+    let mapHeading: Double
     @State private var particles: [WindParticle] = []
     @State private var animationTimer: Timer?
     @State private var viewSize: CGSize = .zero
-    // Timer closure struct'i yakalayinca let windData eski kalir,
+    // Timer closure struct'i yakalayinca let windData/mapHeading eski kalir,
     // @State ise SwiftUI storage uzerinden her zaman guncel deger dondurur
     @State private var activeWindData: [WindGridPoint] = []
+    @State private var activeHeading: Double = 0
 
     private let particleCount = 800
 
@@ -24,6 +26,7 @@ struct WindOverlayView: View {
             .onAppear {
                 viewSize = geometry.size
                 activeWindData = windData
+                activeHeading = mapHeading
                 initializeParticles(in: geometry.size)
                 startAnimation()
             }
@@ -38,6 +41,13 @@ struct WindOverlayView: View {
             .onChange(of: windData) { _, newData in
                 activeWindData = newData
                 // Eski yondeki kuyruk izlerini temizle, yeni yone hemen gecis
+                for i in particles.indices {
+                    particles[i].trail = []
+                }
+            }
+            .onChange(of: mapHeading) { _, newHeading in
+                activeHeading = newHeading
+                // Harita dondurulunce eski yondeki kuyruk izlerini temizle
                 for i in particles.indices {
                     particles[i].trail = []
                 }
@@ -130,8 +140,8 @@ struct WindOverlayView: View {
                 continue
             }
 
-            // Ruzgar yonu -> hiz vektoru
-            let dirRad = ((wind.direction + 180) * .pi) / 180.0
+            // Ruzgar yonu -> ekran-hizali hiz vektoru (harita heading'i duzeltmesi ile)
+            let dirRad = ((wind.direction + 180 - activeHeading) * .pi) / 180.0
 
             // Ruzgar hizina orantili partikul hizi (Windy-tarzi: hizli ruzgar = hizli partikul)
             let speedFactor = max(0.5, wind.speed / 4.0)
@@ -181,11 +191,15 @@ struct WindOverlayView: View {
     private func getWindAtPoint(_ point: CGPoint, in size: CGSize) -> WindGridPoint? {
         guard !activeWindData.isEmpty, size.width > 0, size.height > 0 else { return nil }
 
-        // Ekran noktasini lat/lng'ye cevir
-        let lng = mapRegion.center.longitude - mapRegion.span.longitudeDelta / 2 +
-                  (Double(point.x) / Double(size.width)) * mapRegion.span.longitudeDelta
-        let lat = mapRegion.center.latitude + mapRegion.span.latitudeDelta / 2 -
-                  (Double(point.y) / Double(size.height)) * mapRegion.span.latitudeDelta
+        // Ekran noktasini lat/lng'ye cevir (harita heading'i hesaba katarak)
+        let nx = Double(point.x) / Double(size.width) - 0.5
+        let ny = Double(point.y) / Double(size.height) - 0.5
+        let headingRad = activeHeading * .pi / 180.0
+        // Ekran ofsetini cografi eksenlere cevir (heading rotasyonunu geri al)
+        let geoNx = nx * cos(headingRad) - ny * sin(headingRad)
+        let geoNy = nx * sin(headingRad) + ny * cos(headingRad)
+        let lng = mapRegion.center.longitude + geoNx * mapRegion.span.longitudeDelta
+        let lat = mapRegion.center.latitude - geoNy * mapRegion.span.latitudeDelta
 
         // Deniz alaninda mi kontrol et
         guard SeaAreas.isInSea(lat: lat, lng: lng) else { return nil }
