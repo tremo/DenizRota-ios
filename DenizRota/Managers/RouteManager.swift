@@ -62,7 +62,10 @@ class RouteManager: ObservableObject {
 
     func clearRoute() {
         guard let route = currentRoute else { return }
-        route.waypoints.forEach { route.removeWaypoint($0) }
+        let waypointsToRemove = Array(route.waypoints)
+        for waypoint in waypointsToRemove {
+            route.removeWaypoint(waypoint)
+        }
         objectWillChange.send()
     }
 
@@ -80,7 +83,7 @@ class RouteManager: ObservableObject {
         await withTaskGroup(of: (Int, WeatherData?).self) { group in
             for (index, coordinate) in coordinates.enumerated() {
                 group.addTask {
-                    let weather = try? await self.weatherService.fetchWeather(for: coordinate)
+                    let weather = try? await self.weatherService.fetchWeather(for: coordinate, date: departureDate)
                     return (index, weather)
                 }
             }
@@ -102,7 +105,7 @@ class RouteManager: ObservableObject {
     func loadWeatherForWaypoint(_ waypoint: Waypoint, departureDate: Date = Date()) async {
         waypoint.isLoading = true
 
-        if let weather = try? await weatherService.fetchWeather(for: waypoint.coordinate) {
+        if let weather = try? await weatherService.fetchWeather(for: waypoint.coordinate, date: departureDate) {
             waypoint.updateWeather(from: weather)
         }
 
@@ -264,5 +267,6 @@ extension Waypoint {
 
         waveDirection = data.waveDirection
         wavePeriod = data.wavePeriod
+        riskLevel = data.riskLevel
     }
 }

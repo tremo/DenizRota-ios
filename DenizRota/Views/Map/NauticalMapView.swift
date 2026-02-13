@@ -297,13 +297,20 @@ struct NauticalMapView: UIViewRepresentable {
         }
 
         // --- Circle Overlay ---
-        // Mevcut circle'i kaldir ve yeniden ekle (radius degismis olabilir)
-        for overlay in mapView.overlays where overlay is AnchorCircleOverlay {
-            mapView.removeOverlay(overlay)
-        }
+        // Sadece center veya radius degismisse guncelle (flicker onlemi)
+        let existingCircle = mapView.overlays.compactMap { $0 as? AnchorCircleOverlay }.first
+        let needsCircleUpdate = existingCircle == nil ||
+            abs(existingCircle!.coordinate.latitude - center.latitude) > 0.00001 ||
+            abs(existingCircle!.coordinate.longitude - center.longitude) > 0.00001 ||
+            abs(existingCircle!.radius - anchorRadius) > 0.1
 
-        let circle = AnchorCircleOverlay(center: center, radius: anchorRadius)
-        mapView.addOverlay(circle, level: .aboveRoads)
+        if needsCircleUpdate {
+            for overlay in mapView.overlays where overlay is AnchorCircleOverlay {
+                mapView.removeOverlay(overlay)
+            }
+            let circle = AnchorCircleOverlay(center: center, radius: anchorRadius)
+            mapView.addOverlay(circle, level: .aboveRoads)
+        }
 
         // --- Center Annotation ---
         let existingCenters = mapView.annotations.compactMap { $0 as? AnchorCenterAnnotation }

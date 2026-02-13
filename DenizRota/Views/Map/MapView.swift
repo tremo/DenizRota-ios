@@ -42,6 +42,7 @@ struct MapView: View {
         span: MKCoordinateSpan(latitudeDelta: 2, longitudeDelta: 2)
     )
     @State private var windGridLoadTask: Task<Void, Never>?
+    @State private var routeWeatherLoadTask: Task<Void, Never>?
 
     // Demir alarmi
     @StateObject private var anchorAlarmManager = AnchorAlarmManager.shared
@@ -346,7 +347,7 @@ struct MapView: View {
                             .clipShape(Circle())
                             .shadow(radius: 4)
                     }
-                    .disabled(activeRoute?.waypoints.isEmpty ?? true && !locationManager.isTracking)
+                    .disabled((activeRoute?.waypoints.isEmpty ?? true) && !locationManager.isTracking)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, showTimelineBar ? 8 : 30)
@@ -480,9 +481,8 @@ struct MapView: View {
     /// Otomatik hava durumu guncelleme
     /// Aktif rota varsa ve waypoint'ler varsa hava durumunu gunceller
     private func autoRefreshWeather() {
-        // Sadece rota modu aktifken ve waypoint varsa guncelle
-        guard isRouteMode,
-              let route = activeRoute,
+        // Aktif rota varsa ve waypoint'ler varsa guncelle (rota modu veya gosterilen rota)
+        guard let route = activeRoute,
               !route.waypoints.isEmpty,
               !isLoadingWeather else { return }
 
@@ -510,8 +510,14 @@ struct MapView: View {
 
         // Her waypoint icin hava durumu (secilen tarihe gore)
         for waypoint in route.waypoints {
+            // Iptal edildiyse erken cik (race condition onlemi)
+            guard !Task.isCancelled else { break }
+
             do {
                 let weather = try await WeatherService.shared.fetchWeather(for: waypoint.coordinate, date: forecastDate)
+
+                // Iptal edildiyse sonucu yazma (eski veri ustune yazmayı onle)
+                guard !Task.isCancelled else { break }
 
                 await MainActor.run {
                     waypoint.windSpeed = weather.windSpeed
@@ -525,6 +531,7 @@ struct MapView: View {
                     waypoint.isLoading = false
                 }
             } catch {
+                guard !Task.isCancelled else { break }
                 await MainActor.run {
                     waypoint.isLoading = false
                     waypoint.riskLevel = .unknown
@@ -538,9 +545,10 @@ struct MapView: View {
 
     /// Zaman cubugu degistiginde cagirilir - hava durumunu gunceller
     private func onForecastDateChanged(_ date: Date) {
-        // Aktif rota varsa hava durumunu guncelle
+        // Aktif rota varsa hava durumunu guncelle (onceki istegi iptal et)
         if let route = activeRoute, !route.waypoints.isEmpty {
-            Task { await loadWeatherForRoute() }
+            routeWeatherLoadTask?.cancel()
+            routeWeatherLoadTask = Task { await loadWeatherForRoute() }
         }
 
         // Ruzgar overlay aktifse grid verisini de guncelle
@@ -628,13 +636,23 @@ struct MapView: View {
 
     /// Ruzgar grid verisini yukle (Windy-tarzi animasyon icin)
     private func loadWindGrid() async {
+        // Zaten yukleme varsa bekle (scheduleWindGridReload iptal mekanizmasini kullanir)
         guard !isLoadingWindGrid else { return }
         isLoadingWindGrid = true
 
+        let region = currentMapRegion
+        let date = selectedForecastDate
+
         let data = await WeatherGridLoader.shared.loadWindGrid(
-            for: currentMapRegion,
-            date: selectedForecastDate
+            for: region,
+            date: date
         )
+
+        // Iptal edildiyse sonucu yazma
+        guard !Task.isCancelled else {
+            isLoadingWindGrid = false
+            return
+        }
 
         await MainActor.run {
             windGridData = data
@@ -647,6 +665,7 @@ struct MapView: View {
         guard showWindOverlay else { return }
 
         windGridLoadTask?.cancel()
+        isLoadingWindGrid = false // Onceki yuklemeyi sifirla, yenisi baslasin
         windGridLoadTask = Task {
             // 1.5 saniye bekle (gereksiz API cagrilarini onle)
             try? await Task.sleep(nanoseconds: 1_500_000_000)
