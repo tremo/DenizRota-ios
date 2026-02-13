@@ -22,7 +22,7 @@ final class AnchorAlarmManager: ObservableObject {
 
     // MARK: - Anti-Drift Filter
 
-    /// Ust uste daire disinda kalan konum sayisi
+    /// Üst üste daire dışında kalan konum sayısı
     private var consecutiveOutsideCount = 0
     private let requiredConsecutiveCount = 3
 
@@ -33,7 +33,7 @@ final class AnchorAlarmManager: ObservableObject {
     // MARK: - Init
 
     private init() {
-        // Son kullanilan yaricapi yukle
+        // Son kullanılan yarıçapı yükle
         let savedRadius = UserDefaults.standard.double(forKey: radiusKey)
         if savedRadius > 0 {
             radius = savedRadius
@@ -42,7 +42,7 @@ final class AnchorAlarmManager: ObservableObject {
 
     // MARK: - Draft Mode
 
-    /// Draft modunu baslat - mevcut konum merkez olur
+    /// Draft modunu başlat - mevcut konum merkez olur
     func startDrafting(at coordinate: CLLocationCoordinate2D) {
         anchorCenter = coordinate
         isAlarmTriggered = false
@@ -51,7 +51,7 @@ final class AnchorAlarmManager: ObservableObject {
         state = .drafting
     }
 
-    /// Draft modunu iptal et
+    /// Draft modunu iptal et (demir konumunu sıfırla)
     func cancelDrafting() {
         state = .idle
         anchorCenter = nil
@@ -62,18 +62,18 @@ final class AnchorAlarmManager: ObservableObject {
 
     // MARK: - Alarm Activation
 
-    /// Alarmi aktif et (draft'tan gecis)
+    /// Alarmı aktif et (draft'tan geçiş)
     func activateAlarm() {
         guard state == .drafting, anchorCenter != nil else { return }
         state = .active
         consecutiveOutsideCount = 0
         isAlarmTriggered = false
 
-        // Yaricapi kaydet
+        // Yarıçapı kaydet
         UserDefaults.standard.set(radius, forKey: radiusKey)
     }
 
-    /// Alarmi durdur
+    /// Alarmı durdur
     func deactivateAlarm() {
         state = .idle
         anchorCenter = nil
@@ -84,7 +84,7 @@ final class AnchorAlarmManager: ObservableObject {
 
     // MARK: - Location Check
 
-    /// Yeni konum verisi geldiginde cagrilir
+    /// Yeni konum verisi geldiğinde çağrılır
     func checkLocation(_ location: CLLocation) {
         guard state == .active, let center = anchorCenter else { return }
 
@@ -103,11 +103,11 @@ final class AnchorAlarmManager: ObservableObject {
                 triggerAlarm(drift: distance)
             }
         } else {
-            // Daire icine dondu - sayaci sifirla
+            // Daire içine döndü - sayacı sıfırla
             consecutiveOutsideCount = 0
 
             if isAlarmTriggered {
-                // Tekne geri dondu, alarmi sustur
+                // Tekne geri döndü, alarmı sustur
                 isAlarmTriggered = false
             }
         }
