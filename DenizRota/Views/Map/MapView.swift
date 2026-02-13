@@ -43,7 +43,6 @@ struct MapView: View {
     )
     @State private var windGridLoadTask: Task<Void, Never>?
     @State private var routeWeatherLoadTask: Task<Void, Never>?
-    @State private var mapHeading: Double = 0
 
     // Demir alarmi
     @StateObject private var anchorAlarmManager = AnchorAlarmManager.shared
@@ -69,6 +68,8 @@ struct MapView: View {
                 anchorCenter: anchorAlarmManager.anchorCenter,
                 anchorRadius: anchorAlarmManager.radius,
                 isAlarmTriggered: anchorAlarmManager.isAlarmTriggered,
+                showWindOverlay: showWindOverlay,
+                windData: windGridData,
                 onTapCoordinate: { coordinate in
                     addWaypoint(at: coordinate)
                 },
@@ -79,9 +80,6 @@ struct MapView: View {
                     currentMapRegion = region
                     scheduleWindGridReload()
                 },
-                onHeadingChanged: { heading in
-                    mapHeading = heading
-                },
                 onAnchorCenterChanged: { coordinate in
                     anchorAlarmManager.updateCenter(coordinate)
                 },
@@ -90,17 +88,6 @@ struct MapView: View {
                 }
             )
             .ignoresSafeArea(edges: .top)
-
-            // Ruzgar partikul animasyonu overlay'i
-            if showWindOverlay && !windGridData.isEmpty {
-                WindOverlayView(
-                    windData: windGridData,
-                    mapRegion: currentMapRegion,
-                    mapHeading: mapHeading
-                )
-                .ignoresSafeArea(edges: .top)
-                .allowsHitTesting(false)
-            }
 
             // UI Overlay
             VStack {

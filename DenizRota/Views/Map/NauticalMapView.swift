@@ -109,10 +109,13 @@ struct NauticalMapView: UIViewRepresentable {
     var anchorRadius: Double = 50
     var isAlarmTriggered: Bool = false
 
+    // Ruzgar partikul overlay
+    var showWindOverlay: Bool = false
+    var windData: [WindGridPoint] = []
+
     var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
     var onDeleteWaypoint: ((Waypoint) -> Void)?
     var onRegionChanged: ((MKCoordinateRegion) -> Void)?
-    var onHeadingChanged: ((Double) -> Void)?
     var onAnchorCenterChanged: ((CLLocationCoordinate2D) -> Void)?
     var onAnchorRadiusChanged: ((Double) -> Void)?
 
@@ -155,6 +158,13 @@ struct NauticalMapView: UIViewRepresentable {
             addOpenSeaMapOverlay(to: mapView)
         }
 
+        // Ruzgar partikul view'i MKMapView'in subview'i olarak ekle
+        let particleView = WindParticleView(frame: mapView.bounds)
+        particleView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        particleView.mapView = mapView
+        mapView.addSubview(particleView)
+        context.coordinator.windParticleView = particleView
+
         return mapView
     }
 
@@ -170,6 +180,7 @@ struct NauticalMapView: UIViewRepresentable {
         updateAnnotations(mapView)
         updateRouteOverlay(mapView)
         updateAnchorOverlay(mapView, context: context)
+        updateWindOverlay(context: context)
     }
 
     // MARK: - OpenSeaMap
@@ -404,6 +415,18 @@ struct NauticalMapView: UIViewRepresentable {
         )
     }
 
+    // MARK: - Wind Overlay
+
+    private func updateWindOverlay(context: Context) {
+        guard let particleView = context.coordinator.windParticleView else { return }
+        particleView.windData = windData
+        if showWindOverlay && !particleView.isAnimating {
+            particleView.startAnimation()
+        } else if !showWindOverlay && particleView.isAnimating {
+            particleView.stopAnimation()
+        }
+    }
+
     // MARK: - Rendering Helpers
 
     static func renderWaypointImage(number: Int, riskLevel: RiskLevel, isLoading: Bool) -> UIImage {
@@ -547,6 +570,7 @@ struct NauticalMapView: UIViewRepresentable {
         var isProgrammaticRegionChange = false
         var calloutHostingController: UIHostingController<WaypointCalloutContent>?
         var selectedWaypointAnnotation: WaypointAnnotation?
+        var windParticleView: WindParticleView?
 
         // Anchor alarm gesture state
         private var anchorPanGesture: UIPanGestureRecognizer?
@@ -819,7 +843,6 @@ struct NauticalMapView: UIViewRepresentable {
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
             updateCalloutPosition(in: mapView)
             parent?.onRegionChanged?(mapView.region)
-            parent?.onHeadingChanged?(mapView.camera.heading)
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
