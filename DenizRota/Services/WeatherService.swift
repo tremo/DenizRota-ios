@@ -31,20 +31,42 @@ actor WeatherService {
         let weatherValues = weather.valuesForDate(date)
         let marineValues = marine?.valuesForDate(date)
 
-        // Fetch hesaplama (kıyıya yakınsa dalga düşür)
-        let fetchDistance = FetchCalculator.shared.calculateFetch(
-            lat: coordinate.latitude,
-            lng: coordinate.longitude,
-            windDirection: weatherValues.windDirection
-        )
+        // Fetch hesaplama ve dalga yüksekliği ayarlama
+        let windSpeed = weatherValues.windSpeed
+        let fetchDistance: Double
+        let adjustedWaveHeight: Double
 
-        let adjustedWaveHeight = FetchCalculator.shared.adjustWaveHeight(
-            marineValues?.waveHeight ?? 0,
-            fetchKm: fetchDistance
-        )
+        if windSpeed < 5 {
+            // Rüzgar çok düşükse fetch hesabı anlamsız (yön güvenilmez)
+            // Swell baskın olduğu için toplam dalga yüksekliğini doğrudan kullan
+            fetchDistance = 0
+            adjustedWaveHeight = marineValues?.waveHeight ?? 0
+        } else {
+            fetchDistance = FetchCalculator.shared.calculateFetch(
+                lat: coordinate.latitude,
+                lng: coordinate.longitude,
+                windDirection: weatherValues.windDirection
+            )
+
+            let swellHeight = marineValues?.swellWaveHeight ?? 0
+            let windWaveHeight = marineValues?.windWaveHeight ?? 0
+
+            if swellHeight > 0 || windWaveHeight > 0 {
+                // Ayrı bileşenler mevcut: sadece rüzgar dalgasına fetch ayarı uygula, swell olduğu gibi
+                let adjustedWindWave = FetchCalculator.shared.adjustWaveHeight(windWaveHeight, fetchKm: fetchDistance)
+                // Toplam: sqrt(swell² + windWave²) — dalga enerjisi süperpozisyonu
+                adjustedWaveHeight = sqrt(swellHeight * swellHeight + adjustedWindWave * adjustedWindWave)
+            } else {
+                // Eski API yanıtı (ayrı bileşen yok): toplam dalgaya fetch uygula (eski davranış)
+                adjustedWaveHeight = FetchCalculator.shared.adjustWaveHeight(
+                    marineValues?.waveHeight ?? 0,
+                    fetchKm: fetchDistance
+                )
+            }
+        }
 
         let data = WeatherData(
-            windSpeed: weatherValues.windSpeed,
+            windSpeed: windSpeed,
             windDirection: weatherValues.windDirection,
             windGusts: weatherValues.windGusts,
             temperature: weatherValues.temperature,
@@ -80,7 +102,7 @@ actor WeatherService {
         components.queryItems = [
             URLQueryItem(name: "latitude", value: String(coordinate.latitude)),
             URLQueryItem(name: "longitude", value: String(coordinate.longitude)),
-            URLQueryItem(name: "hourly", value: "wave_height,wave_direction,wave_period"),
+            URLQueryItem(name: "hourly", value: "wave_height,wave_direction,wave_period,swell_wave_height,wind_wave_height"),
             URLQueryItem(name: "forecast_days", value: "3"),
             URLQueryItem(name: "timezone", value: "auto")
         ]
@@ -185,9 +207,11 @@ struct HourlyWeatherValues {
 }
 
 struct HourlyMarineValues {
-    let waveHeight: Double
+    let waveHeight: Double      // Toplam dalga yüksekliği (swell + wind)
     let waveDirection: Double
     let wavePeriod: Double
+    let swellWaveHeight: Double // Uzak fırtınadan gelen swell
+    let windWaveHeight: Double  // Yerel rüzgarın oluşturduğu dalga
 }
 
 // MARK: - API Response Types
@@ -222,14 +246,22 @@ private struct MarineAPIResponse: Decodable {
         let wave_height: [Double?]
         let wave_direction: [Double?]
         let wave_period: [Double?]
+        let swell_wave_height: [Double?]?  // Opsiyonel: eski cache/response'larda olmayabilir
+        let wind_wave_height: [Double?]?   // Opsiyonel: eski cache/response'larda olmayabilir
     }
 
     func valuesForDate(_ date: Date) -> HourlyMarineValues {
         let index = closestIndex(times: hourly.time, to: date)
+        let totalWave = hourly.wave_height[safe: index].flatMap { $0 } ?? 0
+        let swellWave = hourly.swell_wave_height?[safe: index].flatMap { $0 } ?? 0
+        let windWave = hourly.wind_wave_height?[safe: index].flatMap { $0 } ?? 0
+
         return HourlyMarineValues(
-            waveHeight: hourly.wave_height[safe: index].flatMap { $0 } ?? 0,
+            waveHeight: totalWave,
             waveDirection: hourly.wave_direction[safe: index].flatMap { $0 } ?? 0,
-            wavePeriod: hourly.wave_period[safe: index].flatMap { $0 } ?? 0
+            wavePeriod: hourly.wave_period[safe: index].flatMap { $0 } ?? 0,
+            swellWaveHeight: swellWave,
+            windWaveHeight: windWave
         )
     }
 }
@@ -237,9 +269,11 @@ private struct MarineAPIResponse: Decodable {
 // MARK: - Helpers
 
 /// ISO 8601 zaman dizisinden hedef tarihe en yakin index'i bul
+/// Open-Meteo timezone=auto ile yerel saat döndürür ("2024-01-15T14:00" formatında)
 private func closestIndex(times: [String], to date: Date) -> Int {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withFullDate, .withTime, .withDashSeparatorInDate, .withColonSeparatorInTime]
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
+    formatter.timeZone = TimeZone.current // API timezone=auto ile yerel saat döndürüyor
 
     let calendar = Calendar.current
     let targetHour = calendar.component(.hour, from: date)
@@ -249,8 +283,7 @@ private func closestIndex(times: [String], to date: Date) -> Int {
     var bestDiff = Int.max
 
     for (i, timeStr) in times.enumerated() {
-        // Format: "2024-01-15T14:00"
-        if let parsed = formatter.date(from: timeStr + ":00Z") ?? parseISO(timeStr) {
+        if let parsed = formatter.date(from: timeStr) {
             let h = calendar.component(.hour, from: parsed)
             let d = calendar.ordinality(of: .day, in: .year, for: parsed) ?? 0
             let diff = abs((d - targetDay) * 24 + (h - targetHour))
@@ -261,13 +294,6 @@ private func closestIndex(times: [String], to date: Date) -> Int {
         }
     }
     return bestIndex
-}
-
-private func parseISO(_ str: String) -> Date? {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
-    formatter.timeZone = TimeZone.current
-    return formatter.date(from: str)
 }
 
 // Safe array subscript
