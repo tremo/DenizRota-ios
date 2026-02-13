@@ -11,9 +11,11 @@ struct WindOverlayView: View {
     @State private var particles: [WindParticle] = []
     @State private var animationTimer: Timer?
     @State private var viewSize: CGSize = .zero
-    // Timer closure struct'i yakalayinca let windData/mapHeading eski kalir,
-    // @State ise SwiftUI storage uzerinden her zaman guncel deger dondurur
+    // Timer closure struct'i yakalayinca let property'ler (windData, mapRegion,
+    // mapHeading) eski kalir. @State ise SwiftUI storage uzerinden her zaman guncel
+    // deger dondurur, bu yuzden timer'dan erisilenler @State kopyasina alinir.
     @State private var activeWindData: [WindGridPoint] = []
+    @State private var activeMapRegion: MKCoordinateRegion = MKCoordinateRegion()
     @State private var activeHeading: Double = 0
 
     private let particleCount = 800
@@ -26,6 +28,7 @@ struct WindOverlayView: View {
             .onAppear {
                 viewSize = geometry.size
                 activeWindData = windData
+                activeMapRegion = mapRegion
                 activeHeading = mapHeading
                 initializeParticles(in: geometry.size)
                 startAnimation()
@@ -40,6 +43,7 @@ struct WindOverlayView: View {
             }
             .onChange(of: windData) { _, newData in
                 activeWindData = newData
+                activeMapRegion = mapRegion
                 // Eski yondeki kuyruk izlerini temizle, yeni yone hemen gecis
                 for i in particles.indices {
                     particles[i].trail = []
@@ -47,6 +51,7 @@ struct WindOverlayView: View {
             }
             .onChange(of: mapHeading) { _, newHeading in
                 activeHeading = newHeading
+                activeMapRegion = mapRegion
                 // Harita dondurulunce eski yondeki kuyruk izlerini temizle
                 for i in particles.indices {
                     particles[i].trail = []
@@ -192,14 +197,15 @@ struct WindOverlayView: View {
         guard !activeWindData.isEmpty, size.width > 0, size.height > 0 else { return nil }
 
         // Ekran noktasini lat/lng'ye cevir (harita heading'i hesaba katarak)
+        let region = activeMapRegion
         let nx = Double(point.x) / Double(size.width) - 0.5
         let ny = Double(point.y) / Double(size.height) - 0.5
         let headingRad = activeHeading * .pi / 180.0
         // Ekran ofsetini cografi eksenlere cevir (heading rotasyonunu geri al)
         let geoNx = nx * cos(headingRad) - ny * sin(headingRad)
         let geoNy = nx * sin(headingRad) + ny * cos(headingRad)
-        let lng = mapRegion.center.longitude + geoNx * mapRegion.span.longitudeDelta
-        let lat = mapRegion.center.latitude - geoNy * mapRegion.span.latitudeDelta
+        let lng = region.center.longitude + geoNx * region.span.longitudeDelta
+        let lat = region.center.latitude - geoNy * region.span.latitudeDelta
 
         // Deniz alaninda mi kontrol et
         guard SeaAreas.isInSea(lat: lat, lng: lng) else { return nil }
