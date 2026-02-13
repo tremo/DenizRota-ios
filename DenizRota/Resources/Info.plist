@@ -23,9 +23,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Ekran kapaliyken de seyrinizi takip edebilmek icin surekli konum izni gerekiyor.</string>
+	<string>Ekran kapalıyken de seyrinizi takip edebilmek için sürekli konum izni gerekiyor.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Rotanizi takip etmek icin konum izni gerekiyor.</string>
+	<string>Rotanızı takip etmek için konum izni gerekiyor.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
