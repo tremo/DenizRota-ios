@@ -22,6 +22,7 @@ class WindParticleView: UIView {
     private var particles: [GeoParticle] = []
     private var displayLink: CADisplayLink?
     private let particleCount = 800
+    private var projection = ScreenProjection()
 
     // Partikul: cografi koordinatlarda yasar, harita ile birlikte hareket eder
     private struct GeoParticle {
@@ -30,6 +31,50 @@ class WindParticleView: UIView {
         var age: Double
         var maxAge: Double
         var trail: [(lat: Double, lng: Double)]
+    }
+
+    // Frame basina 3 convert cagrisiyla hesaplanan projeksiyon matrisi.
+    // Tum partikul/trail noktalarini basit aritmetikle ekrana cevirir.
+    private struct ScreenProjection {
+        var refLat: Double = 0
+        var refLng: Double = 0
+        var refScreen: CGPoint = .zero
+        // Ekran koordinati degisimi / derece degisimi
+        var dLatX: CGFloat = 0
+        var dLatY: CGFloat = 0
+        var dLngX: CGFloat = 0
+        var dLngY: CGFloat = 0
+
+        mutating func update(mapView: MKMapView, view: UIView) {
+            let center = mapView.region.center
+            refLat = center.latitude
+            refLng = center.longitude
+            refScreen = mapView.convert(center, toPointTo: view)
+
+            let delta = 0.01
+            let pLat = mapView.convert(
+                CLLocationCoordinate2D(latitude: center.latitude + delta, longitude: center.longitude),
+                toPointTo: view
+            )
+            let pLng = mapView.convert(
+                CLLocationCoordinate2D(latitude: center.latitude, longitude: center.longitude + delta),
+                toPointTo: view
+            )
+
+            dLatX = (pLat.x - refScreen.x) / delta
+            dLatY = (pLat.y - refScreen.y) / delta
+            dLngX = (pLng.x - refScreen.x) / delta
+            dLngY = (pLng.y - refScreen.y) / delta
+        }
+
+        func toScreen(lat: Double, lng: Double) -> CGPoint {
+            let dl = lat - refLat
+            let dn = lng - refLng
+            return CGPoint(
+                x: refScreen.x + CGFloat(dl) * dLatX + CGFloat(dn) * dLngX,
+                y: refScreen.y + CGFloat(dl) * dLatY + CGFloat(dn) * dLngY
+            )
+        }
     }
 
     override init(frame: CGRect) {
@@ -63,6 +108,8 @@ class WindParticleView: UIView {
     }
 
     @objc private func tick() {
+        guard let mapView = mapView else { return }
+        projection.update(mapView: mapView, view: self)
         updateParticles()
         setNeedsDisplay()
     }
@@ -93,6 +140,7 @@ class WindParticleView: UIView {
 
         // Metre/piksel orani - zoom seviyesine gore partikul hizini kalibre eder
         let metersPerPoint = mapView.region.span.latitudeDelta * 111_000 / Double(viewBounds.height)
+        let proj = projection
 
         for i in particles.indices {
             let coord = CLLocationCoordinate2D(latitude: particles[i].lat, longitude: particles[i].lng)
@@ -129,11 +177,8 @@ class WindParticleView: UIView {
             particles[i].lng += dLng
             particles[i].age += 1
 
-            // Ekran disina ciktiysa veya omru dolduysa resetle
-            let screenPoint = mapView.convert(
-                CLLocationCoordinate2D(latitude: particles[i].lat, longitude: particles[i].lng),
-                toPointTo: self
-            )
+            // Ekran disina ciktiysa veya omru dolduysa resetle (projeksiyon cache ile)
+            let screenPoint = proj.toScreen(lat: particles[i].lat, lng: particles[i].lng)
             let margin: CGFloat = 20
             if particles[i].age > particles[i].maxAge ||
                screenPoint.x < -margin || screenPoint.x > viewBounds.width + margin ||
@@ -155,9 +200,9 @@ class WindParticleView: UIView {
     // MARK: - Drawing (Core Graphics)
 
     override func draw(_ rect: CGRect) {
-        guard let context = UIGraphicsGetCurrentContext(),
-              let mapView = mapView else { return }
+        guard let context = UIGraphicsGetCurrentContext() else { return }
 
+        let proj = projection
         context.setLineCap(.round)
 
         for particle in particles {
@@ -169,11 +214,11 @@ class WindParticleView: UIView {
             let lifeRatio = particle.age / particle.maxAge
             let fadeAlpha = CGFloat(max(0, 1.0 - lifeRatio))
 
-            // Trail koordinatlarini ekran noktasina cevir (mapView.convert otomatik heading/zoom uygular)
+            // Trail koordinatlarini ekran noktasina cevir (projeksiyon cache ile - frame basina 3 convert)
             var screenPoints: [CGPoint] = particle.trail.map { p in
-                mapView.convert(CLLocationCoordinate2D(latitude: p.lat, longitude: p.lng), toPointTo: self)
+                proj.toScreen(lat: p.lat, lng: p.lng)
             }
-            screenPoints.append(mapView.convert(coord, toPointTo: self))
+            screenPoints.append(proj.toScreen(lat: particle.lat, lng: particle.lng))
 
             let segmentCount = screenPoints.count - 1
             guard segmentCount > 0 else { continue }
