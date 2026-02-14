@@ -33,10 +33,7 @@ enum MapStyleOption: String, CaseIterable, Identifiable {
 class WaypointAnnotation: NSObject, MKAnnotation {
     let waypoint: Waypoint
     let number: Int
-
-    var coordinate: CLLocationCoordinate2D {
-        waypoint.coordinate
-    }
+    @objc dynamic var coordinate: CLLocationCoordinate2D
 
     var title: String? {
         waypoint.name
@@ -45,6 +42,7 @@ class WaypointAnnotation: NSObject, MKAnnotation {
     init(waypoint: Waypoint, number: Int) {
         self.waypoint = waypoint
         self.number = number
+        self.coordinate = waypoint.coordinate
     }
 }
 
@@ -116,6 +114,8 @@ struct NauticalMapView: UIViewRepresentable {
     var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
     var onDeleteWaypoint: ((Waypoint) -> Void)?
     var onRegionChanged: ((MKCoordinateRegion) -> Void)?
+    var onWaypointMoved: ((Waypoint, CLLocationCoordinate2D) -> Void)?
+    var onInsertWaypoint: ((CLLocationCoordinate2D, Int) -> Void)?
     var onAnchorCenterChanged: ((CLLocationCoordinate2D) -> Void)?
     var onAnchorRadiusChanged: ((Double) -> Void)?
 
@@ -154,6 +154,17 @@ struct NauticalMapView: UIViewRepresentable {
         }
         mapView.addGestureRecognizer(tapGesture)
 
+        // Long press gesture: rota cizgisi uzerinde 3 sn basinca araya waypoint ekle
+        let longPressGesture = UILongPressGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleLongPress(_:))
+        )
+        longPressGesture.minimumPressDuration = 3.0
+        longPressGesture.allowableMovement = 10
+        longPressGesture.delegate = context.coordinator
+        mapView.addGestureRecognizer(longPressGesture)
+        context.coordinator.longPressGesture = longPressGesture
+
         if showOpenSeaMap {
             addOpenSeaMapOverlay(to: mapView)
         }
@@ -177,8 +188,10 @@ struct NauticalMapView: UIViewRepresentable {
 
         updateOpenSeaMapOverlay(mapView)
         updateRegion(mapView, context: context)
-        updateAnnotations(mapView)
-        updateRouteOverlay(mapView)
+        if !context.coordinator.isDraggingWaypoint {
+            updateAnnotations(mapView)
+            updateRouteOverlay(mapView)
+        }
         updateAnchorOverlay(mapView, context: context)
         updateWindOverlay(context: context)
     }
@@ -271,6 +284,7 @@ struct NauticalMapView: UIViewRepresentable {
                         riskLevel: waypoint.riskLevel,
                         isLoading: waypoint.isLoading
                     )
+                    view.isDraggable = isRouteMode
                 }
             } else {
                 mapView.addAnnotation(WaypointAnnotation(waypoint: waypoint, number: number))
@@ -572,6 +586,10 @@ struct NauticalMapView: UIViewRepresentable {
         var selectedWaypointAnnotation: WaypointAnnotation?
         var windParticleView: WindParticleView?
 
+        // Waypoint drag state
+        var isDraggingWaypoint = false
+        var longPressGesture: UILongPressGestureRecognizer?
+
         // Anchor alarm gesture state
         private var anchorPanGesture: UIPanGestureRecognizer?
         private var isDraggingAnchorCenter = false
@@ -681,6 +699,25 @@ struct NauticalMapView: UIViewRepresentable {
                 return false
             }
 
+            // Long press gesture: rota modunda polyline yakininda
+            if gestureRecognizer === longPressGesture {
+                guard let parent = parent, parent.isRouteMode,
+                      let mapView = gestureRecognizer.view as? MKMapView,
+                      let route = parent.activeRoute,
+                      route.waypoints.count > 1 else { return false }
+
+                let point = gestureRecognizer.location(in: mapView)
+                let sortedWaypoints = route.sortedWaypoints
+                for i in 0..<(sortedWaypoints.count - 1) {
+                    let startPoint = mapView.convert(sortedWaypoints[i].coordinate, toPointTo: mapView)
+                    let endPoint = mapView.convert(sortedWaypoints[i + 1].coordinate, toPointTo: mapView)
+                    if distanceFromPoint(point, toSegmentFrom: startPoint, to: endPoint) < 44 {
+                        return true
+                    }
+                }
+                return false
+            }
+
             // Tap gesture: rota modu icin
             guard let parent = parent, parent.isRouteMode,
                   let mapView = gestureRecognizer.view as? MKMapView else {
@@ -709,6 +746,10 @@ struct NauticalMapView: UIViewRepresentable {
             if gestureRecognizer === anchorPanGesture || otherGestureRecognizer === anchorPanGesture {
                 return false
             }
+            // Long press ile diger gesture'lar ayni anda calismasin
+            if gestureRecognizer === longPressGesture || otherGestureRecognizer === longPressGesture {
+                return false
+            }
             return false
         }
 
@@ -718,6 +759,109 @@ struct NauticalMapView: UIViewRepresentable {
 
             let coordinate = mapView.convert(gesture.location(in: mapView), toCoordinateFrom: mapView)
             parent.onTapCoordinate?(coordinate)
+        }
+
+        // MARK: - Long Press (Araya Waypoint Ekleme)
+
+        @objc func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+            guard gesture.state == .began,
+                  let parent = parent,
+                  parent.isRouteMode,
+                  let mapView = gesture.view as? MKMapView,
+                  let route = parent.activeRoute,
+                  route.waypoints.count > 1 else { return }
+
+            let touchPoint = gesture.location(in: mapView)
+            let sortedWaypoints = route.sortedWaypoints
+
+            var closestSegmentIndex = -1
+            var closestDistance: CGFloat = .greatestFiniteMagnitude
+
+            for i in 0..<(sortedWaypoints.count - 1) {
+                let startPoint = mapView.convert(sortedWaypoints[i].coordinate, toPointTo: mapView)
+                let endPoint = mapView.convert(sortedWaypoints[i + 1].coordinate, toPointTo: mapView)
+                let distance = distanceFromPoint(touchPoint, toSegmentFrom: startPoint, to: endPoint)
+
+                if distance < closestDistance {
+                    closestDistance = distance
+                    closestSegmentIndex = i
+                }
+            }
+
+            guard closestDistance < 44, closestSegmentIndex >= 0 else { return }
+
+            let coordinate = mapView.convert(touchPoint, toCoordinateFrom: mapView)
+            parent.onInsertWaypoint?(coordinate, closestSegmentIndex + 1)
+
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.success)
+        }
+
+        /// Nokta ile dogru parcasi arasindaki en kisa mesafe (ekran koordinatlarinda)
+        private func distanceFromPoint(_ point: CGPoint, toSegmentFrom start: CGPoint, to end: CGPoint) -> CGFloat {
+            let dx = end.x - start.x
+            let dy = end.y - start.y
+            let lengthSquared = dx * dx + dy * dy
+
+            if lengthSquared == 0 { return hypot(point.x - start.x, point.y - start.y) }
+
+            var t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared
+            t = max(0, min(1, t))
+
+            let projX = start.x + t * dx
+            let projY = start.y + t * dy
+
+            return hypot(point.x - projX, point.y - projY)
+        }
+
+        // MARK: - Waypoint Drag
+
+        func mapView(_ mapView: MKMapView, annotationView view: MKAnnotationView, didChange newState: MKAnnotationView.DragState, fromOldState oldState: MKAnnotationView.DragState) {
+            guard let waypointAnnotation = view.annotation as? WaypointAnnotation else { return }
+
+            switch newState {
+            case .starting:
+                isDraggingWaypoint = true
+                removeCallout()
+
+            case .dragging:
+                updateRoutePolylineDuringDrag(mapView)
+
+            case .ending:
+                let newCoordinate = waypointAnnotation.coordinate
+                parent?.onWaypointMoved?(waypointAnnotation.waypoint, newCoordinate)
+                view.dragState = .none
+                isDraggingWaypoint = false
+                updateRoutePolylineDuringDrag(mapView)
+                let generator = UIImpactFeedbackGenerator(style: .medium)
+                generator.impactOccurred()
+
+            case .canceling:
+                waypointAnnotation.coordinate = waypointAnnotation.waypoint.coordinate
+                view.dragState = .none
+                isDraggingWaypoint = false
+                updateRoutePolylineDuringDrag(mapView)
+
+            default:
+                break
+            }
+        }
+
+        /// Drag sirasinda polyline'i annotation'larin guncel konumlarindan yeniden ciz
+        private func updateRoutePolylineDuringDrag(_ mapView: MKMapView) {
+            for overlay in mapView.overlays where overlay is MKPolyline {
+                mapView.removeOverlay(overlay)
+            }
+
+            let waypointAnnotations = mapView.annotations
+                .compactMap { $0 as? WaypointAnnotation }
+                .sorted { $0.number < $1.number }
+
+            guard waypointAnnotations.count > 1 else { return }
+
+            var coordinates = waypointAnnotations.map(\.coordinate)
+            let polyline = MKPolyline(coordinates: &coordinates, count: coordinates.count)
+            mapView.addOverlay(polyline, level: .aboveRoads)
         }
 
         // MARK: - MKMapViewDelegate
@@ -765,6 +909,7 @@ struct NauticalMapView: UIViewRepresentable {
                     isLoading: waypointAnnotation.waypoint.isLoading
                 )
                 view.centerOffset = CGPoint(x: 0, y: 0)
+                view.isDraggable = parent?.isRouteMode ?? false
 
                 return view
             }

@@ -76,6 +76,12 @@ struct MapView: View {
                 onDeleteWaypoint: { waypoint in
                     deleteWaypoint(waypoint)
                 },
+                onWaypointMoved: { waypoint, coordinate in
+                    moveWaypoint(waypoint, to: coordinate)
+                },
+                onInsertWaypoint: { coordinate, index in
+                    insertWaypoint(at: coordinate, atIndex: index)
+                },
                 onRegionChanged: { region in
                     currentMapRegion = region
                     scheduleWindGridReload()
@@ -466,6 +472,45 @@ struct MapView: View {
               let lastWaypoint = route.sortedWaypoints.last else { return }
 
         deleteWaypoint(lastWaypoint)
+    }
+
+    private func moveWaypoint(_ waypoint: Waypoint, to coordinate: CLLocationCoordinate2D) {
+        waypoint.latitude = coordinate.latitude
+        waypoint.longitude = coordinate.longitude
+
+        // Konum degistigi icin hava durumu verisini temizle
+        waypoint.windSpeed = nil
+        waypoint.windDirection = nil
+        waypoint.windGusts = nil
+        waypoint.temperature = nil
+        waypoint.waveHeight = nil
+        waypoint.waveDirection = nil
+        waypoint.wavePeriod = nil
+        waypoint.riskLevel = .unknown
+
+        activeRoute?.updatedAt = Date()
+    }
+
+    private func insertWaypoint(at coordinate: CLLocationCoordinate2D, atIndex index: Int) {
+        guard let route = activeRoute else { return }
+
+        // Mevcut waypoint'lerin orderIndex'lerini kaydir
+        for waypoint in route.waypoints where waypoint.orderIndex >= index {
+            waypoint.orderIndex += 1
+        }
+
+        let waypoint = Waypoint(
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude,
+            orderIndex: index,
+            name: "Nokta \(index + 1)"
+        )
+
+        route.waypoints.append(waypoint)
+        route.reorderWaypoints()
+
+        let generator = UIImpactFeedbackGenerator(style: .heavy)
+        generator.impactOccurred()
     }
 
     // MARK: - Weather
