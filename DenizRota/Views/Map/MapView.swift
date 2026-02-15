@@ -175,7 +175,7 @@ struct MapView: View {
                     Button {
                         handleAnchorButtonTap()
                     } label: {
-                        Image(systemName: anchorAlarmManager.state == .active ? "stop.fill" : "anchor")
+                        Image(systemName: anchorAlarmManager.state == .active ? "stop.fill" : "anchor.circle.fill")
                             .font(.title3)
                             .padding(10)
                             .background(anchorButtonBackground)
