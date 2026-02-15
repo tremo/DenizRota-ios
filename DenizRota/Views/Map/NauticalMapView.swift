@@ -285,6 +285,13 @@ struct NauticalMapView: UIViewRepresentable {
                         isLoading: waypoint.isLoading
                     )
                     view.isDraggable = isRouteMode
+
+                    // Pulsating animasyon: yukleniyor ise ekle, degilse kaldir
+                    if waypoint.isLoading {
+                        Self.addPulseAnimation(to: view)
+                    } else {
+                        Self.removePulseAnimation(from: view)
+                    }
                 }
             } else {
                 mapView.addAnnotation(WaypointAnnotation(waypoint: waypoint, number: number))
@@ -448,11 +455,15 @@ struct NauticalMapView: UIViewRepresentable {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
         return renderer.image { ctx in
             let color: UIColor
-            switch riskLevel {
-            case .green: color = .systemGreen
-            case .yellow: color = .systemOrange
-            case .red: color = .systemRed
-            case .unknown: color = .systemGray
+            if isLoading {
+                color = .systemGray
+            } else {
+                switch riskLevel {
+                case .green: color = .systemGreen
+                case .yellow: color = .systemOrange
+                case .red: color = .systemRed
+                case .unknown: color = .systemGray
+                }
             }
 
             ctx.cgContext.setShadow(
@@ -480,6 +491,38 @@ struct NauticalMapView: UIViewRepresentable {
                 text.draw(at: textPoint, withAttributes: attrs)
             }
         }
+    }
+
+    // MARK: - Pulse Animation
+
+    private static let pulseAnimationKey = "waypointPulse"
+
+    static func addPulseAnimation(to view: MKAnnotationView) {
+        guard view.layer.animation(forKey: pulseAnimationKey) == nil else { return }
+
+        let opacityAnim = CABasicAnimation(keyPath: "opacity")
+        opacityAnim.fromValue = 1.0
+        opacityAnim.toValue = 0.35
+
+        let scaleAnim = CABasicAnimation(keyPath: "transform.scale")
+        scaleAnim.fromValue = 1.0
+        scaleAnim.toValue = 0.85
+
+        let group = CAAnimationGroup()
+        group.animations = [opacityAnim, scaleAnim]
+        group.duration = 0.8
+        group.autoreverses = true
+        group.repeatCount = .infinity
+        group.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+
+        view.layer.add(group, forKey: pulseAnimationKey)
+    }
+
+    static func removePulseAnimation(from view: MKAnnotationView) {
+        guard view.layer.animation(forKey: pulseAnimationKey) != nil else { return }
+        view.layer.removeAnimation(forKey: pulseAnimationKey)
+        view.layer.opacity = 1.0
+        view.layer.transform = CATransform3DIdentity
     }
 
     static func renderUserLocationImage() -> UIImage {
@@ -910,6 +953,11 @@ struct NauticalMapView: UIViewRepresentable {
                 )
                 view.centerOffset = CGPoint(x: 0, y: 0)
                 view.isDraggable = parent?.isRouteMode ?? false
+
+                // Yukleniyor ise pulsating animasyon ekle
+                if waypointAnnotation.waypoint.isLoading {
+                    NauticalMapView.addPulseAnimation(to: view)
+                }
 
                 return view
             }

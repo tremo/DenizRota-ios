@@ -405,6 +405,14 @@ struct MapView: View {
                 span: MKCoordinateSpan(latitudeDelta: 0.5, longitudeDelta: 0.5)
             )
         }
+
+        // Hava durumu verisi yoksa otomatik yukle
+        if !route.waypoints.isEmpty {
+            let hasWeatherData = route.waypoints.contains { $0.windSpeed != nil }
+            if !hasWeatherData {
+                Task { await loadWeatherForRoute() }
+            }
+        }
     }
 
     // MARK: - Route Mode
@@ -459,6 +467,9 @@ struct MapView: View {
         // Haptic feedback
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
+
+        // Otomatik hava durumu yukle
+        Task { await loadWeatherForWaypoint(waypoint) }
     }
 
     private func deleteWaypoint(_ waypoint: Waypoint) {
@@ -489,6 +500,9 @@ struct MapView: View {
         waypoint.riskLevel = .unknown
 
         activeRoute?.updatedAt = Date()
+
+        // Yeni konum icin otomatik hava durumu yukle
+        Task { await loadWeatherForWaypoint(waypoint) }
     }
 
     private func insertWaypoint(at coordinate: CLLocationCoordinate2D, atIndex index: Int) {
@@ -511,6 +525,9 @@ struct MapView: View {
 
         let generator = UIImpactFeedbackGenerator(style: .heavy)
         generator.impactOccurred()
+
+        // Otomatik hava durumu yukle
+        Task { await loadWeatherForWaypoint(waypoint) }
     }
 
     // MARK: - Weather
@@ -532,6 +549,40 @@ struct MapView: View {
 
         Task {
             await loadWeatherForRoute()
+        }
+    }
+
+    /// Tek bir waypoint icin hava durumu yukle (ekleme/tasima sonrasi)
+    private func loadWeatherForWaypoint(_ waypoint: Waypoint) async {
+        let forecastDate = selectedForecastDate
+
+        waypoint.isLoading = true
+
+        do {
+            let weather = try await WeatherService.shared.fetchWeather(for: waypoint.coordinate, date: forecastDate)
+
+            guard !Task.isCancelled else {
+                waypoint.isLoading = false
+                return
+            }
+
+            await MainActor.run {
+                waypoint.windSpeed = weather.windSpeed
+                waypoint.windDirection = weather.windDirection
+                waypoint.windGusts = weather.windGusts
+                waypoint.temperature = weather.temperature
+                waypoint.waveHeight = weather.waveHeight
+                waypoint.waveDirection = weather.waveDirection
+                waypoint.wavePeriod = weather.wavePeriod
+                waypoint.riskLevel = weather.riskLevel
+                waypoint.isLoading = false
+            }
+        } catch {
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                waypoint.isLoading = false
+                waypoint.riskLevel = .unknown
+            }
         }
     }
 
