@@ -76,15 +76,15 @@ struct MapView: View {
                 onDeleteWaypoint: { waypoint in
                     deleteWaypoint(waypoint)
                 },
+                onRegionChanged: { region in
+                    currentMapRegion = region
+                    scheduleWindGridReload()
+                },
                 onWaypointMoved: { waypoint, coordinate in
                     moveWaypoint(waypoint, to: coordinate)
                 },
                 onInsertWaypoint: { coordinate, index in
                     insertWaypoint(at: coordinate, atIndex: index)
-                },
-                onRegionChanged: { region in
-                    currentMapRegion = region
-                    scheduleWindGridReload()
                 },
                 onAnchorCenterChanged: { coordinate in
                     anchorAlarmManager.updateCenter(coordinate)
