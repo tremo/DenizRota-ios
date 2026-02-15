@@ -63,9 +63,12 @@ final class Route {
     // Waypoint sil
     func removeWaypoint(_ waypoint: Waypoint) {
         waypoints.removeAll { $0.id == waypoint.id }
-        // Sıralamayı güncelle
+        // Sıralamayı ve isimleri güncelle
         for (index, wp) in waypoints.sorted(by: { $0.orderIndex < $1.orderIndex }).enumerated() {
             wp.orderIndex = index
+            if wp.name == nil || wp.name?.hasPrefix("Nokta ") == true {
+                wp.name = "Nokta \(index + 1)"
+            }
         }
         updatedAt = Date()
     }
@@ -74,6 +77,9 @@ final class Route {
     func reorderWaypoints() {
         for (index, wp) in waypoints.sorted(by: { $0.orderIndex < $1.orderIndex }).enumerated() {
             wp.orderIndex = index
+            if wp.name == nil || wp.name?.hasPrefix("Nokta ") == true {
+                wp.name = "Nokta \(index + 1)"
+            }
         }
         updatedAt = Date()
     }
