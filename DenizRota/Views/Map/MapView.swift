@@ -97,6 +97,16 @@ struct MapView: View {
 
             // UI Overlay
             VStack {
+                // Rota bilgi cubugu - Sol ust, saatin altinda
+                if let route = activeRoute {
+                    HStack {
+                        RouteInfoBar(route: route, isSaved: route.name != "Yeni Rota")
+                        Spacer()
+                    }
+                    .padding(.leading, 16)
+                    .padding(.top, 4)
+                }
+
                 // Ust bilgi paneli
                 HStack(alignment: .top) {
                     // Hiz paneli (seyir aktifken) - Sol ust
@@ -195,13 +205,6 @@ struct MapView: View {
                     }
                     .padding(.trailing, 16)
                     .padding(.top, 8)
-                }
-
-                // Rota bilgi cubugu
-                if let route = activeRoute {
-                    RouteInfoBar(route: route, isSaved: route.name != "Yeni Rota")
-                        .padding(.horizontal)
-                        .padding(.top, 8)
                 }
 
                 Spacer()
