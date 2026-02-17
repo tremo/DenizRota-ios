@@ -181,6 +181,24 @@ struct MapView: View {
                             }
                     }
 
+                    // Konuma git butonu - Sag ust
+                    Button {
+                        if let location = locationManager.currentLocation {
+                            mapRegion = MKCoordinateRegion(
+                                center: location.coordinate,
+                                span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+                            )
+                        }
+                    } label: {
+                        Image(systemName: locationManager.currentLocation != nil ? "location.fill" : "location.slash")
+                            .font(.title3)
+                            .padding(10)
+                            .background(.ultraThinMaterial)
+                            .foregroundStyle(locationManager.currentLocation != nil ? .blue : .secondary)
+                            .clipShape(Circle())
+                            .shadow(radius: 2)
+                    }
+
                     // Demir alarmi butonu - Sag ust
                     Button {
                         handleAnchorButtonTap()
@@ -387,6 +405,10 @@ struct MapView: View {
         }
         .onAppear {
             autoRefreshWeather()
+            // Haritada mavi konum noktası için güncellemeleri başlat
+            if locationManager.hasAnyPermission {
+                locationManager.startLocationUpdates()
+            }
         }
         // Kayitli rotadan secilen rotayi haritada goster
         .onChange(of: routeToShow) { oldValue, newValue in
