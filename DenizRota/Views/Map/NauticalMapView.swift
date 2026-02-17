@@ -90,12 +90,17 @@ class AnchorCircleOverlay: MKCircle {}
 
 class OpenSeaMapOverlay: MKTileOverlay {}
 
+// MARK: - Depth Map Tile Overlay
+
+class DepthMapOverlay: MKTileOverlay {}
+
 // MARK: - Nautical Map View
 
 struct NauticalMapView: UIViewRepresentable {
     var region: MKCoordinateRegion
     var mapStyle: MapStyleOption
     var showOpenSeaMap: Bool
+    var showDepthMap: Bool = false
 
     var userLocation: CLLocation?
     var activeRoute: Route?
@@ -165,6 +170,10 @@ struct NauticalMapView: UIViewRepresentable {
         mapView.addGestureRecognizer(longPressGesture)
         context.coordinator.longPressGesture = longPressGesture
 
+        if showDepthMap {
+            addDepthMapOverlay(to: mapView)
+        }
+
         if showOpenSeaMap {
             addOpenSeaMapOverlay(to: mapView)
         }
@@ -186,6 +195,7 @@ struct NauticalMapView: UIViewRepresentable {
             mapView.mapType = mapStyle.mapType
         }
 
+        updateDepthMapOverlay(mapView)
         updateOpenSeaMapOverlay(mapView)
         updateRegion(mapView, context: context)
         if !context.coordinator.isDraggingWaypoint {
@@ -194,6 +204,29 @@ struct NauticalMapView: UIViewRepresentable {
         }
         updateAnchorOverlay(mapView, context: context)
         updateWindOverlay(context: context)
+    }
+
+    // MARK: - Depth Map
+
+    private func addDepthMapOverlay(to mapView: MKMapView) {
+        let template = "https://t1.openseamap.org/depth/{z}/{x}/{y}.png"
+        let overlay = DepthMapOverlay(urlTemplate: template)
+        overlay.canReplaceMapContent = false
+        overlay.maximumZ = 18
+        overlay.minimumZ = 8
+        // aboveRoads seviyesinde ekle - seamark (.aboveLabels) altında kalır
+        mapView.addOverlay(overlay, level: .aboveRoads)
+    }
+
+    private func updateDepthMapOverlay(_ mapView: MKMapView) {
+        let hasOverlay = mapView.overlays.contains { $0 is DepthMapOverlay }
+        if showDepthMap && !hasOverlay {
+            addDepthMapOverlay(to: mapView)
+        } else if !showDepthMap && hasOverlay {
+            for overlay in mapView.overlays where overlay is DepthMapOverlay {
+                mapView.removeOverlay(overlay)
+            }
+        }
     }
 
     // MARK: - OpenSeaMap

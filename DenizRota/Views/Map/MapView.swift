@@ -19,6 +19,7 @@ struct MapView: View {
     // Harita tipi
     @State private var mapStyle: MapStyleOption = .hybrid
     @State private var showOpenSeaMap = true
+    @State private var showDepthMap = false
 
     @State private var isRouteMode = false
     @State private var activeRoute: Route?
@@ -61,6 +62,7 @@ struct MapView: View {
                 region: mapRegion,
                 mapStyle: mapStyle,
                 showOpenSeaMap: showOpenSeaMap,
+                showDepthMap: showDepthMap,
                 userLocation: locationManager.currentLocation,
                 activeRoute: activeRoute,
                 isRouteMode: isRouteMode,
@@ -133,6 +135,10 @@ struct MapView: View {
 
                         Toggle(isOn: $showOpenSeaMap) {
                             Label("Deniz Haritasi", systemImage: "water.waves")
+                        }
+
+                        Toggle(isOn: $showDepthMap) {
+                            Label("Derinlik Haritasi", systemImage: "arrow.down.to.line.compact")
                         }
                     } label: {
                         Image(systemName: "map.fill")
