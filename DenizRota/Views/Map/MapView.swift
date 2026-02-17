@@ -185,8 +185,16 @@ struct MapView: View {
                     Button {
                         handleAnchorButtonTap()
                     } label: {
-                        Image(systemName: anchorAlarmManager.state == .active ? "stop.fill" : "anchor.circle.fill")
-                            .font(.title3)
+                        Group {
+                            if anchorAlarmManager.state == .active {
+                                Image(systemName: "stop.fill")
+                                    .font(.title3)
+                            } else {
+                                Text("⚓")
+                                    .font(.system(size: 18, weight: .bold))
+                            }
+                        }
+                            .frame(width: 22, height: 22)
                             .padding(10)
                             .background(anchorButtonBackground)
                             .foregroundStyle(anchorButtonForeground)
@@ -978,8 +986,8 @@ struct AnchorActiveInfoBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "anchor.circle.fill")
-                .font(.title3)
+            Text("⚓")
+                .font(.system(size: 18, weight: .bold))
                 .foregroundStyle(.green)
 
             Text("Demir Alarmi Aktif")
