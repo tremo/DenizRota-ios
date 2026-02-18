@@ -31,6 +31,7 @@ class WindParticleView: UIView {
         var age: Double
         var maxAge: Double
         var trail: [(lat: Double, lng: Double)]
+        var cachedSpeed: Double = 0  // Son IDW sonucu - draw() icin cache
     }
 
     // Frame basina 3 convert cagrisiyla hesaplanan projeksiyon matrisi.
@@ -149,6 +150,9 @@ class WindParticleView: UIView {
                 continue
             }
 
+            // IDW sonucunu cache'le (draw() tekrar hesaplamasin)
+            particles[i].cachedSpeed = wind.speed
+
             // Ruzgar yonu -> cografi hareket vektoru
             let toAngleRad = (wind.direction + 180) * .pi / 180.0
             let speedFactor = max(0.5, wind.speed / 4.0)
@@ -207,10 +211,12 @@ class WindParticleView: UIView {
 
         for particle in particles {
             guard particle.trail.count > 1 else { continue }
-            let coord = CLLocationCoordinate2D(latitude: particle.lat, longitude: particle.lng)
-            guard let wind = getWindAtCoordinate(coord) else { continue }
 
-            let color = windColor(for: wind.speed)
+            // Cache'lenmis hiz degerini kullan (IDW tekrar hesaplanmaz)
+            let speed = particle.cachedSpeed
+            guard speed > 0 else { continue }
+
+            let color = windColor(for: speed)
             let lifeRatio = particle.age / particle.maxAge
             let fadeAlpha = CGFloat(max(0, 1.0 - lifeRatio))
 
@@ -223,7 +229,7 @@ class WindParticleView: UIView {
             let segmentCount = screenPoints.count - 1
             guard segmentCount > 0 else { continue }
 
-            let lineWidth = max(1.0, min(2.5, wind.speed / 20.0 + 0.8))
+            let lineWidth = max(1.0, min(2.5, speed / 20.0 + 0.8))
             context.setLineWidth(lineWidth)
 
             // Trail: gradient efekti (bastan sona artan opacity)
@@ -239,7 +245,7 @@ class WindParticleView: UIView {
 
             // Partikul basi - parlak nokta
             let headAlpha = fadeAlpha * 0.95
-            let headSize = max(2.0, min(3.5, wind.speed / 20.0 + 1.5))
+            let headSize = max(2.0, min(3.5, speed / 20.0 + 1.5))
             let headPoint = screenPoints.last!
             context.setFillColor(color.withAlphaComponent(headAlpha).cgColor)
             context.fillEllipse(in: CGRect(
@@ -558,15 +564,15 @@ class WeatherGridLoader {
 
                     group.addTask {
                         let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
-                        guard let weather = try? await self.weatherService.fetchWeather(for: coord, date: date) else {
+                        guard let wind = try? await self.weatherService.fetchWindOnly(for: coord, date: date) else {
                             return nil
                         }
                         return WindGridPoint(
                             lat: lat,
                             lng: lng,
-                            speed: weather.windSpeed,
-                            direction: weather.windDirection,
-                            gusts: weather.windGusts
+                            speed: wind.windSpeed,
+                            direction: wind.windDirection,
+                            gusts: wind.windGusts
                         )
                     }
                 }

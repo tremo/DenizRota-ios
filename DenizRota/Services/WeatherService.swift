@@ -8,9 +8,35 @@ actor WeatherService {
     private let marineURL = "https://marine-api.open-meteo.com/v1/marine"
 
     private var cache: [String: CacheEntry] = [:]
+    private var windCache: [String: WindCacheEntry] = [:]
+    private var weatherResponseCache: [String: (response: WeatherAPIResponse, timestamp: Date)] = [:]
+    private var marineResponseCache: [String: (response: MarineAPIResponse, timestamp: Date)] = [:]
     private let cacheExpiration: TimeInterval = 3600 // 1 saat
 
     // MARK: - Public API
+
+    /// Sadece ruzgar verisi (Marine API cagrilmaz - wind grid icin optimize)
+    func fetchWindOnly(for coordinate: CLLocationCoordinate2D, date: Date = Date()) async throws -> WindOnlyData {
+        let key = cacheKey(for: coordinate, date: date)
+
+        // Tam hava durumu cache'inde varsa oradan al
+        if let cached = cache[key], !cached.isExpired {
+            return WindOnlyData(windSpeed: cached.data.windSpeed, windDirection: cached.data.windDirection, windGusts: cached.data.windGusts)
+        }
+
+        // Ruzgar cache'inde varsa oradan al
+        if let cached = windCache[key], !cached.isExpired {
+            return cached.data
+        }
+
+        // Raw response cache'ten al veya API cagir (sadece Weather, Marine yok)
+        let weather = try await getCachedOrFetchWeatherAPI(coordinate)
+        let values = weather.valuesForDate(date)
+
+        let data = WindOnlyData(windSpeed: values.windSpeed, windDirection: values.windDirection, windGusts: values.windGusts)
+        windCache[key] = WindCacheEntry(data: data)
+        return data
+    }
 
     func fetchWeather(for coordinate: CLLocationCoordinate2D, date: Date = Date()) async throws -> WeatherData {
         let cacheKey = cacheKey(for: coordinate, date: date)
@@ -20,9 +46,9 @@ actor WeatherService {
             return cached.data
         }
 
-        // Paralel API çağrıları
-        async let weatherTask = fetchWeatherAPI(coordinate)
-        async let marineTask = fetchMarineAPI(coordinate)
+        // Paralel API çağrıları (response cache ile)
+        async let weatherTask = getCachedOrFetchWeatherAPI(coordinate)
+        async let marineTask = getCachedOrFetchMarineAPI(coordinate)
 
         let weather = try await weatherTask
         let marine = try? await marineTask // Marine opsiyonel
@@ -82,6 +108,32 @@ actor WeatherService {
         return data
     }
 
+    // MARK: - Response Cache Layer
+    // Raw API response'lari koordinat bazinda cache'ler (saat bilgisi yok).
+    // API 72 saatlik veri dondurur - saat degistiginde tekrar fetch gerekmez.
+
+    private func getCachedOrFetchWeatherAPI(_ coordinate: CLLocationCoordinate2D) async throws -> WeatherAPIResponse {
+        let key = coordCacheKey(for: coordinate)
+        if let cached = weatherResponseCache[key],
+           Date().timeIntervalSince(cached.timestamp) < cacheExpiration {
+            return cached.response
+        }
+        let response = try await fetchWeatherAPI(coordinate)
+        weatherResponseCache[key] = (response: response, timestamp: Date())
+        return response
+    }
+
+    private func getCachedOrFetchMarineAPI(_ coordinate: CLLocationCoordinate2D) async throws -> MarineAPIResponse {
+        let key = coordCacheKey(for: coordinate)
+        if let cached = marineResponseCache[key],
+           Date().timeIntervalSince(cached.timestamp) < cacheExpiration {
+            return cached.response
+        }
+        let response = try await fetchMarineAPI(coordinate)
+        marineResponseCache[key] = (response: response, timestamp: Date())
+        return response
+    }
+
     // MARK: - API Calls
 
     private func fetchWeatherAPI(_ coordinate: CLLocationCoordinate2D) async throws -> WeatherAPIResponse {
@@ -136,10 +188,11 @@ actor WeatherService {
 
     // MARK: - Cache
 
+    /// Koordinat + saat bazli cache key (islenmis veri icin)
     private func cacheKey(for coordinate: CLLocationCoordinate2D, date: Date) -> String {
-        // 0.01 derece grid (yaklaşık 1km) + tarih/saat bilgisi
-        let lat = (coordinate.latitude * 100).rounded() / 100
-        let lng = (coordinate.longitude * 100).rounded() / 100
+        // 0.001 derece grid (~111m) + tarih/saat bilgisi
+        let lat = (coordinate.latitude * 1000).rounded() / 1000
+        let lng = (coordinate.longitude * 1000).rounded() / 1000
         let calendar = Calendar.current
         let year = calendar.component(.year, from: date)
         let month = calendar.component(.month, from: date)
@@ -148,8 +201,18 @@ actor WeatherService {
         return "\(lat),\(lng),\(year)-\(month)-\(day),\(hour)"
     }
 
+    /// Koordinat bazli cache key (raw response icin, saat yok)
+    private func coordCacheKey(for coordinate: CLLocationCoordinate2D) -> String {
+        let lat = (coordinate.latitude * 1000).rounded() / 1000
+        let lng = (coordinate.longitude * 1000).rounded() / 1000
+        return "\(lat),\(lng)"
+    }
+
     func clearCache() {
         cache.removeAll()
+        windCache.removeAll()
+        weatherResponseCache.removeAll()
+        marineResponseCache.removeAll()
     }
 }
 
@@ -188,6 +251,28 @@ private struct CacheEntry {
     let timestamp: Date
 
     init(data: WeatherData) {
+        self.data = data
+        self.timestamp = Date()
+    }
+
+    var isExpired: Bool {
+        Date().timeIntervalSince(timestamp) > 3600
+    }
+}
+
+// MARK: - Wind Only Data (Marine API olmadan)
+
+struct WindOnlyData {
+    let windSpeed: Double       // km/h
+    let windDirection: Double   // degrees
+    let windGusts: Double       // km/h
+}
+
+private struct WindCacheEntry {
+    let data: WindOnlyData
+    let timestamp: Date
+
+    init(data: WindOnlyData) {
         self.data = data
         self.timestamp = Date()
     }
