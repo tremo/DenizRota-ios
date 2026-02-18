@@ -118,6 +118,7 @@ struct NauticalMapView: UIViewRepresentable {
 
     var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
     var onDeleteWaypoint: ((Waypoint) -> Void)?
+    var onRetryWeather: ((Waypoint) -> Void)?
     var onRegionChanged: ((MKCoordinateRegion) -> Void)?
     var onWaypointMoved: ((Waypoint, CLLocationCoordinate2D) -> Void)?
     var onInsertWaypoint: ((CLLocationCoordinate2D, Int) -> Void)?
@@ -1095,6 +1096,10 @@ struct NauticalMapView: UIViewRepresentable {
                     guard let self = self else { return }
                     self.removeCallout()
                     self.parent?.onDeleteWaypoint?(annotation.waypoint)
+                },
+                onRetry: { [weak self] in
+                    guard let self = self else { return }
+                    self.parent?.onRetryWeather?(annotation.waypoint)
                 }
             )
 
@@ -1175,6 +1180,7 @@ struct WaypointCalloutContent: View {
     let waypoint: Waypoint
     let onClose: () -> Void
     let onDelete: () -> Void
+    var onRetry: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1246,6 +1252,19 @@ struct WaypointCalloutContent: View {
                         Text("Yukleniyor...")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
+                    }
+                    .frame(height: 24)
+                } else {
+                    // Hava durumu yuklenemedi - yeniden dene secenegi
+                    Divider()
+                    Button(action: { onRetry?() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 10))
+                            Text("Hava durumu yuklenemedi. Tekrar dene")
+                                .font(.system(size: 10))
+                        }
+                        .foregroundStyle(.orange)
                     }
                     .frame(height: 24)
                 }
