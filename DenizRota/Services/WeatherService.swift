@@ -8,9 +8,33 @@ actor WeatherService {
     private let marineURL = "https://marine-api.open-meteo.com/v1/marine"
 
     private var cache: [String: CacheEntry] = [:]
+    private var windCache: [String: WindCacheEntry] = [:]
     private let cacheExpiration: TimeInterval = 3600 // 1 saat
 
     // MARK: - Public API
+
+    /// Sadece ruzgar verisi (Marine API cagrilmaz - wind grid icin optimize)
+    func fetchWindOnly(for coordinate: CLLocationCoordinate2D, date: Date = Date()) async throws -> WindOnlyData {
+        let key = cacheKey(for: coordinate, date: date)
+
+        // Tam hava durumu cache'inde varsa oradan al
+        if let cached = cache[key], !cached.isExpired {
+            return WindOnlyData(windSpeed: cached.data.windSpeed, windDirection: cached.data.windDirection, windGusts: cached.data.windGusts)
+        }
+
+        // Ruzgar cache'inde varsa oradan al
+        if let cached = windCache[key], !cached.isExpired {
+            return cached.data
+        }
+
+        // Sadece Weather API cagir (Marine API yok)
+        let weather = try await fetchWeatherAPI(coordinate)
+        let values = weather.valuesForDate(date)
+
+        let data = WindOnlyData(windSpeed: values.windSpeed, windDirection: values.windDirection, windGusts: values.windGusts)
+        windCache[key] = WindCacheEntry(data: data)
+        return data
+    }
 
     func fetchWeather(for coordinate: CLLocationCoordinate2D, date: Date = Date()) async throws -> WeatherData {
         let cacheKey = cacheKey(for: coordinate, date: date)
@@ -150,6 +174,7 @@ actor WeatherService {
 
     func clearCache() {
         cache.removeAll()
+        windCache.removeAll()
     }
 }
 
@@ -188,6 +213,28 @@ private struct CacheEntry {
     let timestamp: Date
 
     init(data: WeatherData) {
+        self.data = data
+        self.timestamp = Date()
+    }
+
+    var isExpired: Bool {
+        Date().timeIntervalSince(timestamp) > 3600
+    }
+}
+
+// MARK: - Wind Only Data (Marine API olmadan)
+
+struct WindOnlyData {
+    let windSpeed: Double       // km/h
+    let windDirection: Double   // degrees
+    let windGusts: Double       // km/h
+}
+
+private struct WindCacheEntry {
+    let data: WindOnlyData
+    let timestamp: Date
+
+    init(data: WindOnlyData) {
         self.data = data
         self.timestamp = Date()
     }
