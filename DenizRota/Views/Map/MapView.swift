@@ -78,6 +78,9 @@ struct MapView: View {
                 onDeleteWaypoint: { waypoint in
                     deleteWaypoint(waypoint)
                 },
+                onRetryWeather: { waypoint in
+                    Task { await loadWeatherForWaypoint(waypoint) }
+                },
                 onRegionChanged: { region in
                     currentMapRegion = region
                     scheduleWindGridReload()
@@ -297,24 +300,6 @@ struct MapView: View {
                             .foregroundStyle(isRouteMode ? .white : .blue)
                             .clipShape(Circle())
                             .shadow(radius: 4)
-                    }
-
-                    // Hava durumu yukle (aktif rota varsa)
-                    if let route = activeRoute, !route.waypoints.isEmpty {
-                        Button {
-                            Task { await loadWeatherForRoute() }
-                        } label: {
-                            Image(systemName: isLoadingWeather ? "arrow.clockwise" : "cloud.sun")
-                                .font(.title2)
-                                .padding(12)
-                                .background(Color(.systemBackground))
-                                .foregroundStyle(.orange)
-                                .clipShape(Circle())
-                                .shadow(radius: 4)
-                                .rotationEffect(.degrees(isLoadingWeather ? 360 : 0))
-                                .animation(isLoadingWeather ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isLoadingWeather)
-                        }
-                        .disabled(isLoadingWeather)
                     }
 
                     // Rota kaydet (sadece kaydedilmemis rotalar icin)
