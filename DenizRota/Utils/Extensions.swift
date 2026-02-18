@@ -105,6 +105,86 @@ extension TimeInterval {
     }
 }
 
+// MARK: - Unit Preferences
+
+/// Hız birimi (tekne hızı ve rüzgar hızı için ortak)
+enum SpeedUnit: String, CaseIterable {
+    case kmh = "km/h"
+    case knots = "kn"
+
+    var displayName: String {
+        switch self {
+        case .kmh: return "km/s (km/h)"
+        case .knots: return "Knot (kn)"
+        }
+    }
+
+    /// km/h değerini seçilen birime dönüştür
+    func convert(fromKmh value: Double) -> Double {
+        switch self {
+        case .kmh: return value
+        case .knots: return value * 0.539957
+        }
+    }
+
+    /// Değeri birimle birlikte formatla (1 ondalık)
+    func format(_ kmhValue: Double) -> String {
+        switch self {
+        case .kmh: return String(format: "%.1f km/h", kmhValue)
+        case .knots: return String(format: "%.1f kn", kmhValue * 0.539957)
+        }
+    }
+
+    /// Sadece sayı (birim etiketi ayrı kullanmak için)
+    func formatValue(_ kmhValue: Double, decimals: Int = 0) -> String {
+        let converted = convert(fromKmh: kmhValue)
+        return String(format: "%.\(decimals)f", converted)
+    }
+
+    var unitLabel: String { rawValue }
+}
+
+/// Mesafe birimi
+enum DistanceUnit: String, CaseIterable {
+    case km = "km"
+    case nm = "nm"
+
+    var displayName: String {
+        switch self {
+        case .km: return "Kilometre (km)"
+        case .nm: return "Deniz Mili (nm)"
+        }
+    }
+
+    /// km değerini seçilen birime dönüştür
+    func convert(fromKm value: Double) -> Double {
+        switch self {
+        case .km: return value
+        case .nm: return value * 0.539957
+        }
+    }
+
+    /// Değeri birimle birlikte formatla
+    func format(_ kmValue: Double) -> String {
+        switch self {
+        case .km:
+            if kmValue >= 1.0 { return String(format: "%.1f km", kmValue) }
+            else { return String(format: "%.0f m", kmValue * 1000) }
+        case .nm:
+            return String(format: "%.1f nm", kmValue * 0.539957)
+        }
+    }
+
+    var unitLabel: String { rawValue }
+}
+
+// MARK: - AppStorage Keys for Units
+enum UnitStorageKeys {
+    static let boatSpeed = "boatSpeedUnit"   // SpeedUnit.rawValue
+    static let windSpeed = "windSpeedUnit"   // SpeedUnit.rawValue
+    static let distance  = "distanceUnit"    // DistanceUnit.rawValue
+}
+
 // MARK: - Double Extensions
 extension Double {
     /// Koordinat formatı (4 ondalık)
@@ -228,13 +308,13 @@ extension Color {
     static let riskRed = Color.red
     static let riskGray = Color.gray
 
-    /// Wind speed renkleri
+    /// Wind speed renkleri (eşikler AppConstants.windSpeedYellow/Red ile tutarlı)
     static func windColor(for speed: Double) -> Color {
-        if speed < 10 { return .green }
-        if speed < 20 { return .yellow }
-        if speed < 30 { return .orange }
-        if speed < 40 { return .red }
-        return .purple
+        if speed < 15 { return .green }
+        if speed < 25 { return .yellow }
+        if speed < 35 { return .orange }
+        if speed < 50 { return .red }
+        return Color(red: 0.55, green: 0, blue: 0)
     }
 
     /// Wave height renkleri
