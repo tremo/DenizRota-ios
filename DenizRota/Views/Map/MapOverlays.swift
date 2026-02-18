@@ -297,31 +297,32 @@ class WindParticleView: UIView {
     }
 
     // MARK: - 5-Level Wind Color Scale
-    /// Yesil (0-10) -> Sari (10-20) -> Turuncu (20-30) -> Kirmizi (30-40) -> Koyu Kirmizi (40+)
+    /// Yesil (0-15) -> Sari (15-25) -> Turuncu (25-35) -> Kirmizi (35-50) -> Koyu Kirmizi (50+)
+    /// Esikler AppConstants.windSpeedYellow (15) ve windSpeedRed (30) ile tutarli.
 
     private func windColor(for speed: Double) -> UIColor {
         if speed <= 0 { return UIColor(red: 0.20, green: 0.80, blue: 0.20, alpha: 1) }
-        if speed >= 50 { return UIColor(red: 0.55, green: 0.00, blue: 0.00, alpha: 1) }
+        if speed >= 60 { return UIColor(red: 0.55, green: 0.00, blue: 0.00, alpha: 1) }
 
         let tw = 2.0
-        if speed < 10 - tw { return UIColor(red: 0.20, green: 0.80, blue: 0.20, alpha: 1) }
-        if speed < 10 + tw {
-            let t = CGFloat((speed - (10 - tw)) / (2 * tw))
+        if speed < 15 - tw { return UIColor(red: 0.20, green: 0.80, blue: 0.20, alpha: 1) }
+        if speed < 15 + tw {
+            let t = CGFloat((speed - (15 - tw)) / (2 * tw))
             return lerpColor(from: (0.20, 0.80, 0.20), to: (1.00, 0.90, 0.10), t: t)
         }
-        if speed < 20 - tw { return UIColor(red: 1.00, green: 0.90, blue: 0.10, alpha: 1) }
-        if speed < 20 + tw {
-            let t = CGFloat((speed - (20 - tw)) / (2 * tw))
+        if speed < 25 - tw { return UIColor(red: 1.00, green: 0.90, blue: 0.10, alpha: 1) }
+        if speed < 25 + tw {
+            let t = CGFloat((speed - (25 - tw)) / (2 * tw))
             return lerpColor(from: (1.00, 0.90, 0.10), to: (1.00, 0.55, 0.00), t: t)
         }
-        if speed < 30 - tw { return UIColor(red: 1.00, green: 0.55, blue: 0.00, alpha: 1) }
-        if speed < 30 + tw {
-            let t = CGFloat((speed - (30 - tw)) / (2 * tw))
+        if speed < 35 - tw { return UIColor(red: 1.00, green: 0.55, blue: 0.00, alpha: 1) }
+        if speed < 35 + tw {
+            let t = CGFloat((speed - (35 - tw)) / (2 * tw))
             return lerpColor(from: (1.00, 0.55, 0.00), to: (0.95, 0.15, 0.10), t: t)
         }
-        if speed < 40 - tw { return UIColor(red: 0.95, green: 0.15, blue: 0.10, alpha: 1) }
-        if speed < 40 + tw {
-            let t = CGFloat((speed - (40 - tw)) / (2 * tw))
+        if speed < 50 - tw { return UIColor(red: 0.95, green: 0.15, blue: 0.10, alpha: 1) }
+        if speed < 50 + tw {
+            let t = CGFloat((speed - (50 - tw)) / (2 * tw))
             return lerpColor(from: (0.95, 0.15, 0.10), to: (0.55, 0.00, 0.00), t: t)
         }
         return UIColor(red: 0.55, green: 0.00, blue: 0.00, alpha: 1)
@@ -476,9 +477,15 @@ struct WaveGridPoint {
 // MARK: - Wind Legend View
 /// 5 seviyeli ruzgar renk skalasi lejanti
 struct WindLegendView: View {
+    @AppStorage(UnitStorageKeys.windSpeed) private var windSpeedUnitRaw: String = SpeedUnit.kmh.rawValue
+
+    private var windSpeedUnit: SpeedUnit {
+        SpeedUnit(rawValue: windSpeedUnitRaw) ?? .kmh
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("Ruzgar (km/h)")
+            Text("Rüzgar (\(windSpeedUnit.unitLabel))")
                 .font(.caption2)
                 .fontWeight(.semibold)
 
@@ -497,14 +504,33 @@ struct WindLegendView: View {
         .cornerRadius(8)
     }
 
+    // km/h eşik değerleri: 15/25/35/50. Knot modunda bunları dönüştür.
     private var windLevels: [(range: String, color: Color)] {
-        [
-            ("0-10", Color(red: 0.20, green: 0.80, blue: 0.20)),
-            ("10-20", Color(red: 1.00, green: 0.90, blue: 0.10)),
-            ("20-30", Color(red: 1.00, green: 0.55, blue: 0.00)),
-            ("30-40", Color(red: 0.95, green: 0.15, blue: 0.10)),
-            ("40+", Color(red: 0.55, green: 0.00, blue: 0.00))
-        ]
+        let green  = Color(red: 0.20, green: 0.80, blue: 0.20)
+        let yellow = Color(red: 1.00, green: 0.90, blue: 0.10)
+        let orange = Color(red: 1.00, green: 0.55, blue: 0.00)
+        let red    = Color(red: 0.95, green: 0.15, blue: 0.10)
+        let darkRed = Color(red: 0.55, green: 0.00, blue: 0.00)
+
+        switch windSpeedUnit {
+        case .kmh:
+            return [
+                ("0–15",  green),
+                ("15–25", yellow),
+                ("25–35", orange),
+                ("35–50", red),
+                ("50+",   darkRed)
+            ]
+        case .knots:
+            // 15→8, 25→14, 35→19, 50→27 (yuvarlama)
+            return [
+                ("0–8",   green),
+                ("8–14",  yellow),
+                ("14–19", orange),
+                ("19–27", red),
+                ("27+",   darkRed)
+            ]
+        }
     }
 }
 

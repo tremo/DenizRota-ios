@@ -1182,6 +1182,9 @@ struct WaypointCalloutContent: View {
     let onDelete: () -> Void
     var onRetry: (() -> Void)? = nil
 
+    @AppStorage(UnitStorageKeys.windSpeed) private var windSpeedUnitRaw: String = SpeedUnit.kmh.rawValue
+    private var windUnit: SpeedUnit { SpeedUnit(rawValue: windSpeedUnitRaw) ?? .kmh }
+
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 5) {
@@ -1213,8 +1216,8 @@ struct WaypointCalloutContent: View {
                     HStack(spacing: 0) {
                         weatherItem(
                             icon: "wind",
-                            value: String(format: "%.0f", waypoint.windSpeed ?? 0),
-                            unit: "km/h",
+                            value: windUnit.formatValue(waypoint.windSpeed ?? 0, decimals: 0),
+                            unit: windUnit.unitLabel,
                             extra: waypoint.windDirection?.windDirectionText,
                             tint: Color.windColor(for: waypoint.windSpeed ?? 0)
                         )

@@ -13,6 +13,11 @@ struct SettingsView: View {
     @State private var tankCapacity: Double = 200
     @State private var fuelPrice: Double = 45
 
+    // Birim tercihleri (AppStorage ile tüm View'larda otomatik güncellenir)
+    @AppStorage(UnitStorageKeys.boatSpeed) private var boatSpeedUnitRaw: String = SpeedUnit.kmh.rawValue
+    @AppStorage(UnitStorageKeys.windSpeed) private var windSpeedUnitRaw: String = SpeedUnit.kmh.rawValue
+    @AppStorage(UnitStorageKeys.distance)  private var distanceUnitRaw: String  = DistanceUnit.km.rawValue
+
     @State private var showingSaveAlert = false
 
     private var selectedTheme: ThemePreference {
@@ -84,6 +89,31 @@ struct SettingsView: View {
                     Text("₺/L")
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            // Birimler
+            Section {
+                Picker("Tekne Hızı", selection: $boatSpeedUnitRaw) {
+                    ForEach(SpeedUnit.allCases, id: \.rawValue) { unit in
+                        Text(unit.displayName).tag(unit.rawValue)
+                    }
+                }
+
+                Picker("Rüzgar Hızı", selection: $windSpeedUnitRaw) {
+                    ForEach(SpeedUnit.allCases, id: \.rawValue) { unit in
+                        Text(unit.displayName).tag(unit.rawValue)
+                    }
+                }
+
+                Picker("Mesafe", selection: $distanceUnitRaw) {
+                    ForEach(DistanceUnit.allCases, id: \.rawValue) { unit in
+                        Text(unit.displayName).tag(unit.rawValue)
+                    }
+                }
+            } header: {
+                Text("Birimler")
+            } footer: {
+                Text("Hız ve mesafe birimleri tüm ekranlara yansır.")
             }
 
             // Görünüm

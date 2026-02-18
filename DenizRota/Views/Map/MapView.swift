@@ -829,6 +829,9 @@ struct UserLocationMarker: View {
 struct RouteInfoBar: View {
     let route: Route
     var isSaved: Bool = false
+    @AppStorage(UnitStorageKeys.distance) private var distanceUnitRaw: String = DistanceUnit.km.rawValue
+
+    private var distUnit: DistanceUnit { DistanceUnit(rawValue: distanceUnitRaw) ?? .km }
 
     var body: some View {
         HStack(spacing: 16) {
@@ -844,7 +847,7 @@ struct RouteInfoBar: View {
                 .font(.subheadline.bold())
 
             // Mesafe
-            Label(String(format: "%.1f km", route.totalDistance), systemImage: "arrow.left.and.right")
+            Label(distUnit.format(route.totalDistance), systemImage: "arrow.left.and.right")
                 .font(.subheadline.bold())
 
             // Sure
@@ -901,14 +904,17 @@ struct WaypointMarkerView: View {
 
 struct SpeedPanelView: View {
     let speed: Double
+    @AppStorage(UnitStorageKeys.boatSpeed) private var boatSpeedUnitRaw: String = SpeedUnit.kmh.rawValue
+
+    private var unit: SpeedUnit { SpeedUnit(rawValue: boatSpeedUnitRaw) ?? .kmh }
 
     var body: some View {
         VStack(spacing: 4) {
-            Text(String(format: "%.1f", speed))
+            Text(unit.formatValue(speed, decimals: 1))
                 .font(.system(size: 48, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
 
-            Text("km/h")
+            Text(unit.unitLabel)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
