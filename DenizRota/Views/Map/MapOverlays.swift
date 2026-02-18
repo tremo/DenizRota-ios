@@ -259,8 +259,6 @@ class WindParticleView: UIView {
         let lat = coordinate.latitude
         let lng = coordinate.longitude
 
-        guard SeaAreas.isInSea(lat: lat, lng: lng) else { return nil }
-
         var totalWeight = 0.0
         var speedSum = 0.0
         var gustSum = 0.0
@@ -557,8 +555,6 @@ class WeatherGridLoader {
                 for j in 0...gridSize {
                     let lat = region.center.latitude - region.span.latitudeDelta / 2 + Double(i) * latStep
                     let lng = region.center.longitude - region.span.longitudeDelta / 2 + Double(j) * lngStep
-
-                    guard SeaAreas.isInSea(lat: lat, lng: lng) else { continue }
 
                     group.addTask {
                         let coord = CLLocationCoordinate2D(latitude: lat, longitude: lng)
