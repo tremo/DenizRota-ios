@@ -40,6 +40,11 @@ final class LocationManager: NSObject, ObservableObject {
         locationManager.showsBackgroundLocationIndicator = true
 
         authorizationStatus = locationManager.authorizationStatus
+
+        // İzin zaten verilmişse konum güncellemelerini başlat (haritada mavi nokta için)
+        if hasAnyPermission {
+            locationManager.startUpdatingLocation()
+        }
     }
 
     // MARK: - Permissions
@@ -197,6 +202,11 @@ extension LocationManager: CLLocationManagerDelegate {
 
             if authorizationStatus == .authorizedAlways {
                 print("Always authorization granted")
+            }
+
+            // İzin verildiğinde konum güncellemelerini otomatik başlat (haritada mavi nokta için)
+            if authorizationStatus == .authorizedAlways || authorizationStatus == .authorizedWhenInUse {
+                locationManager.startUpdatingLocation()
             }
         }
     }
