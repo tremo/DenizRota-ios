@@ -160,8 +160,8 @@ class TripManager: ObservableObject {
 
     /// Closest Point of Approach (CPA) ile waypoint geçiş tespiti:
     /// - 100m içine girerse: anında geçilmiş sayılır
-    /// - 500m içinde yaklaşıp uzaklaşmaya başlarsa: geçilmiş sayılır
-    /// - 500m'den uzakta kalırsa: geçilmez
+    /// - 1km içinde yaklaşıp uzaklaşmaya başlarsa: geçilmiş sayılır
+    /// - 1km'den uzakta kalırsa: geçilmez
     private func checkWaypointProximity(_ location: CLLocation) {
         guard !targetWaypoints.isEmpty, currentWaypointIndex < targetWaypoints.count else {
             distanceToNextWaypoint = nil
@@ -177,7 +177,7 @@ class TripManager: ObservableObject {
         guard !notifiedWaypoints.contains(targetWaypoint.id) else { return }
 
         let directHit = distance <= AppConstants.waypointProximityThreshold // 100m
-        let closePassing = distance <= 500.0 // CPA eşiği
+        let closePassing = distance <= 1000.0 // CPA eşiği (1 km)
 
         // Yaklaşıp uzaklaşmaya başladı mı kontrol et (CPA tespiti)
         var startedReceding = false
