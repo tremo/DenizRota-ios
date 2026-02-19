@@ -7,6 +7,7 @@ struct MapView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var locationManager: LocationManager
     @Query(sort: \Route.updatedAt, order: .reverse) private var routes: [Route]
+    @Query private var boatSettingsList: [BoatSettings]
 
     // Dışarıdan gelen rota (kayıtlı rotalardan seçilen)
     @Binding var routeToShow: Route?
@@ -44,6 +45,10 @@ struct MapView: View {
     )
     @State private var windGridLoadTask: Task<Void, Never>?
     @State private var routeWeatherLoadTask: Task<Void, Never>?
+
+    // Seyir takip ekrani
+    @State private var showTripTracking = false
+    @State private var tripWaypoints: [Waypoint] = []
 
     // Demir alarmi
     @StateObject private var anchorAlarmManager = AnchorAlarmManager.shared
@@ -415,6 +420,14 @@ struct MapView: View {
                 showRouteOnMap(route)
             }
         }
+        // Seyir takip tam ekrani
+        .fullScreenCover(isPresented: $showTripTracking) {
+            TripTrackingView(
+                waypoints: tripWaypoints,
+                boatSettings: boatSettingsList.first,
+                onTripEnd: { _ in }
+            )
+        }
     }
 
     /// Secilen rotayi haritada goster ve kamerayi ayarla
@@ -673,8 +686,8 @@ struct MapView: View {
 
     private func startTrip() {
         guard let route = activeRoute else { return }
-        let waypoints = route.sortedWaypoints
-        locationManager.startTracking(waypoints: waypoints)
+        tripWaypoints = route.sortedWaypoints
+        showTripTracking = true
     }
 
     private func stopTrip() {
