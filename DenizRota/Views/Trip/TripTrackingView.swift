@@ -75,37 +75,35 @@ struct TripTrackingView: View {
 
     // MARK: - Top Bar
     private var topBar: some View {
-        HStack {
+        HStack(spacing: 12) {
             // Close button
             Button {
                 showStopConfirmation = true
             } label: {
                 Image(systemName: "xmark")
-                    .font(.title3)
+                    .font(.body.weight(.bold))
                     .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 36, height: 36)
                     .background(.red)
                     .clipShape(Circle())
             }
 
-            Spacer()
-
-            // Timer
-            VStack(spacing: 2) {
-                Text("Sure")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Text(tripManager.elapsedTime.formattedDuration)
-                    .font(.title2)
-                    .fontWeight(.bold)
+            // Current speed - prominent
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text("\(tripManager.currentSpeed, specifier: "%.1f")")
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
                     .monospacedDigit()
+                Text("km/h")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(.ultraThinMaterial)
-            .cornerRadius(12)
 
             Spacer()
+
+            // Duration
+            Text(tripManager.elapsedTime.formattedDuration)
+                .font(.system(size: 17, weight: .semibold))
+                .monospacedDigit()
 
             // Pause/Resume button
             Button {
@@ -117,108 +115,101 @@ struct TripTrackingView: View {
                 }
             } label: {
                 Image(systemName: isPaused ? "play.fill" : "pause.fill")
-                    .font(.title3)
+                    .font(.body.weight(.bold))
                     .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 36, height: 36)
                     .background(isPaused ? .green : .orange)
                     .clipShape(Circle())
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial)
+        .cornerRadius(16)
     }
 
     // MARK: - Bottom Panel
     private var bottomPanel: some View {
-        VStack(spacing: 12) {
-            // Speed display
-            speedPanel
+        VStack(spacing: 6) {
+            // Compact stats row
+            HStack(spacing: 0) {
+                compactStat(
+                    value: String(format: "%.1f", tripManager.totalDistance),
+                    unit: "km",
+                    label: "Mesafe"
+                )
 
-            // Stats grid
-            statsGrid
+                Divider().frame(height: 28)
 
-            // Next waypoint info
-            if !waypoints.isEmpty {
-                nextWaypointInfo
+                compactStat(
+                    value: String(format: "%.1f", tripManager.maxSpeed),
+                    unit: "km/h",
+                    label: "Maks"
+                )
+
+                Divider().frame(height: 28)
+
+                let avgSpeed = tripManager.totalDistance > 0 ?
+                    tripManager.totalDistance / (tripManager.elapsedTime / 3600) : 0.0
+                compactStat(
+                    value: String(format: "%.1f", avgSpeed),
+                    unit: "km/h",
+                    label: "Ort"
+                )
             }
-        }
-        .padding()
-        .background(.ultraThinMaterial)
-        .cornerRadius(20, corners: [.topLeft, .topRight])
-    }
 
-    private var speedPanel: some View {
-        VStack(spacing: 4) {
-            Text("\(tripManager.currentSpeed, specifier: "%.1f")")
-                .font(.system(size: 72, weight: .bold, design: .rounded))
-                .monospacedDigit()
-            Text("km/h")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var statsGrid: some View {
-        HStack(spacing: 20) {
-            StatItem(
-                icon: "arrow.up.right",
-                title: "Mesafe",
-                value: String(format: "%.1f km", tripManager.totalDistance)
-            )
-
-            Divider()
-                .frame(height: 40)
-
-            StatItem(
-                icon: "gauge.high",
-                title: "Maks Hiz",
-                value: String(format: "%.1f km/h", tripManager.maxSpeed)
-            )
-
-            Divider()
-                .frame(height: 40)
-
-            StatItem(
-                icon: "speedometer",
-                title: "Ort Hiz",
-                value: tripManager.totalDistance > 0 ?
-                    String(format: "%.1f km/h", tripManager.totalDistance / (tripManager.elapsedTime / 3600)) : "0.0 km/h"
-            )
-        }
-    }
-
-    private var nextWaypointInfo: some View {
-        Group {
+            // Next waypoint (compact single line)
             if tripManager.currentWaypointIndex < waypoints.count {
                 let targetWaypoint = waypoints[tripManager.currentWaypointIndex]
-                HStack {
+                HStack(spacing: 6) {
                     Image(systemName: "location.fill")
+                        .font(.caption2)
                         .foregroundStyle(.blue)
 
-                    VStack(alignment: .leading) {
-                        Text("Sonraki: \(targetWaypoint.name ?? "Nokta \(tripManager.currentWaypointIndex + 1)")")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
+                    Text(targetWaypoint.name ?? "Nokta \(tripManager.currentWaypointIndex + 1)")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
 
-                        if let distance = tripManager.distanceToNextWaypoint {
-                            Text("\(Int(distance)) metre")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                    if let distance = tripManager.distanceToNextWaypoint {
+                        Text("· \(Int(distance))m")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
 
                     Spacer()
 
                     Text("\(tripManager.currentWaypointIndex + 1)/\(waypoints.count)")
-                        .font(.caption)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.blue.opacity(0.2))
-                        .cornerRadius(8)
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.blue.opacity(0.15))
+                        .cornerRadius(6)
                 }
-                .padding()
-                .background(.blue.opacity(0.1))
-                .cornerRadius(12)
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial)
+        .cornerRadius(16, corners: [.topLeft, .topRight])
+    }
+
+    private func compactStat(value: String, unit: String, label: String) -> some View {
+        VStack(spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(.subheadline.weight(.bold))
+                    .monospacedDigit()
+                Text(unit)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+            }
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Route Overlay
