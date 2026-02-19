@@ -740,6 +740,10 @@ struct MapView: View {
                 anchorAlarmManager.startDrafting(at: location.coordinate)
             }
             locationManager.startLocationUpdates()
+            // Teknenin konumuna ve demir cevresine yakin zoom yap
+            // 50m yaricap icin ~0.0015 derece span yeterli (yakl. 165m gorunum)
+            let anchorSpan = MKCoordinateSpan(latitudeDelta: 0.0015, longitudeDelta: 0.0015)
+            mapRegion = MKCoordinateRegion(center: location.coordinate, span: anchorSpan)
 
         case .drafting:
             // Draft modundayken tekrar basilirsa iptal et
