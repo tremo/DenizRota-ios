@@ -92,7 +92,37 @@ class OpenSeaMapOverlay: MKTileOverlay {}
 
 // MARK: - Depth Map Tile Overlay
 
-class DepthMapOverlay: MKTileOverlay {}
+class DepthMapOverlay: MKTileOverlay {
+    // EMODnet Bathymetry WMS kullan - Ege/Akdeniz icin tam kapsama sahip
+    // OpenSeaMap depth tiles (t1.openseamap.org/depth) kalabalik kaynakli oldugundan
+    // Turkiye sularinda veri yok; EMODnet Avrupa denizlerini kapsıyor.
+    override func url(forTilePath path: MKTileOverlayPath) -> URL {
+        let earthCircumference = 40075016.685578
+        let halfCircumference = earthCircumference / 2.0
+        let mapSize = Double(256 * (1 << path.z))
+
+        let minX = Double(path.x * 256) / mapSize * earthCircumference - halfCircumference
+        let maxX = Double((path.x + 1) * 256) / mapSize * earthCircumference - halfCircumference
+        let maxY = halfCircumference - Double(path.y * 256) / mapSize * earthCircumference
+        let minY = halfCircumference - Double((path.y + 1) * 256) / mapSize * earthCircumference
+
+        var components = URLComponents(string: "https://ows.emodnet-bathymetry.eu/wms")!
+        components.queryItems = [
+            URLQueryItem(name: "SERVICE", value: "WMS"),
+            URLQueryItem(name: "VERSION", value: "1.1.1"),
+            URLQueryItem(name: "REQUEST", value: "GetMap"),
+            URLQueryItem(name: "FORMAT", value: "image/png"),
+            URLQueryItem(name: "TRANSPARENT", value: "true"),
+            URLQueryItem(name: "LAYERS", value: "emodnet:mean_multicolour"),
+            URLQueryItem(name: "WIDTH", value: "256"),
+            URLQueryItem(name: "HEIGHT", value: "256"),
+            URLQueryItem(name: "SRS", value: "EPSG:3857"),
+            URLQueryItem(name: "STYLES", value: ""),
+            URLQueryItem(name: "BBOX", value: "\(minX),\(minY),\(maxX),\(maxY)")
+        ]
+        return components.url!
+    }
+}
 
 // MARK: - Nautical Map View
 
@@ -210,11 +240,11 @@ struct NauticalMapView: UIViewRepresentable {
     // MARK: - Depth Map
 
     private func addDepthMapOverlay(to mapView: MKMapView) {
-        let template = "https://t1.openseamap.org/depth/{z}/{x}/{y}.png"
-        let overlay = DepthMapOverlay(urlTemplate: template)
+        // url(forTilePath:) override oldugu icin template kullanilmiyor
+        let overlay = DepthMapOverlay(urlTemplate: nil)
         overlay.canReplaceMapContent = false
+        overlay.minimumZ = 4
         overlay.maximumZ = 18
-        overlay.minimumZ = 8
         // aboveRoads seviyesinde ekle - seamark (.aboveLabels) altında kalır
         mapView.addOverlay(overlay, level: .aboveRoads)
     }
