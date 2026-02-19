@@ -370,7 +370,6 @@ struct MapView: View {
                             .clipShape(Circle())
                             .shadow(radius: 4)
                     }
-                    .disabled((activeRoute?.waypoints.isEmpty ?? true) && !locationManager.isTracking)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, showTimelineBar ? 8 : 30)
@@ -685,8 +684,7 @@ struct MapView: View {
     // MARK: - Trip
 
     private func startTrip() {
-        guard let route = activeRoute else { return }
-        tripWaypoints = route.sortedWaypoints
+        tripWaypoints = activeRoute?.sortedWaypoints ?? []
         showTripTracking = true
     }
 
