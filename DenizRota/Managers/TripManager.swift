@@ -29,6 +29,8 @@ class TripManager: ObservableObject {
     private var lastPosition: CLLocation?
     private var notifiedWaypoints: Set<UUID> = []
     private var cancellables = Set<AnyCancellable>()
+    private var previousDistanceToWaypoint: Double?
+    private var isApproaching: Bool = true
 
     private let locationManager = LocationManager.shared
     private let notificationManager = NotificationManager.shared
@@ -73,6 +75,8 @@ class TripManager: ObservableObject {
         lastPosition = nil
         notifiedWaypoints.removeAll()
         hasArrived = false
+        previousDistanceToWaypoint = nil
+        isApproaching = true
 
         // Setup waypoints for route following
         targetWaypoints = waypoints.sorted { $0.orderIndex < $1.orderIndex }
@@ -154,6 +158,10 @@ class TripManager: ObservableObject {
         checkWaypointProximity(location)
     }
 
+    /// Closest Point of Approach (CPA) ile waypoint geçiş tespiti:
+    /// - 100m içine girerse: anında geçilmiş sayılır
+    /// - 500m içinde yaklaşıp uzaklaşmaya başlarsa: geçilmiş sayılır
+    /// - 500m'den uzakta kalırsa: geçilmez
     private func checkWaypointProximity(_ location: CLLocation) {
         guard !targetWaypoints.isEmpty, currentWaypointIndex < targetWaypoints.count else {
             distanceToNextWaypoint = nil
@@ -166,24 +174,48 @@ class TripManager: ObservableObject {
 
         distanceToNextWaypoint = distance
 
-        // Check if arrived at waypoint
-        if distance <= AppConstants.waypointProximityThreshold {
-            if !notifiedWaypoints.contains(targetWaypoint.id) {
-                notifiedWaypoints.insert(targetWaypoint.id)
+        guard !notifiedWaypoints.contains(targetWaypoint.id) else { return }
 
-                // Send arrival notification
-                notificationManager.sendArrivalNotification(
-                    waypointName: targetWaypoint.name ?? "Nokta \(currentWaypointIndex + 1)",
-                    distance: distance
-                )
+        let directHit = distance <= AppConstants.waypointProximityThreshold // 100m
+        let closePassing = distance <= 500.0 // CPA eşiği
 
-                // Move to next waypoint
-                if currentWaypointIndex < targetWaypoints.count - 1 {
-                    currentWaypointIndex += 1
-                } else {
-                    hasArrived = true
+        // Yaklaşıp uzaklaşmaya başladı mı kontrol et (CPA tespiti)
+        var startedReceding = false
+        if let prevDist = previousDistanceToWaypoint {
+            if distance < prevDist - 5.0 {
+                // Yaklaşıyor (5m hysteresis: GPS gürültüsü filtresi)
+                isApproaching = true
+            } else if distance > prevDist + 5.0 {
+                // Uzaklaşıyor
+                if isApproaching {
+                    // Yaklaşıyordu, şimdi uzaklaşmaya başladı = CPA geçildi
+                    startedReceding = true
+                    isApproaching = false
                 }
             }
+        }
+        previousDistanceToWaypoint = distance
+
+        // Geçiş koşulları: doğrudan varış VEYA yakından geçip uzaklaşma
+        if directHit || (closePassing && startedReceding) {
+            advanceWaypoint(targetWaypoint, distance: distance)
+        }
+    }
+
+    private func advanceWaypoint(_ waypoint: Waypoint, distance: Double) {
+        notifiedWaypoints.insert(waypoint.id)
+        previousDistanceToWaypoint = nil
+        isApproaching = true
+
+        notificationManager.sendArrivalNotification(
+            waypointName: waypoint.name ?? "Nokta \(currentWaypointIndex + 1)",
+            distance: distance
+        )
+
+        if currentWaypointIndex < targetWaypoints.count - 1 {
+            currentWaypointIndex += 1
+        } else {
+            hasArrived = true
         }
     }
 
