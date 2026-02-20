@@ -154,6 +154,7 @@ struct NauticalMapView: UIViewRepresentable {
     var onInsertWaypoint: ((CLLocationCoordinate2D, Int) -> Void)?
     var onAnchorCenterChanged: ((CLLocationCoordinate2D) -> Void)?
     var onAnchorRadiusChanged: ((Double) -> Void)?
+    var onMarineTap: ((CLLocationCoordinate2D) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -825,14 +826,20 @@ struct NauticalMapView: UIViewRepresentable {
                 return false
             }
 
-            // Tap gesture: rota modu icin
-            guard let parent = parent, parent.isRouteMode,
+            // Tap gesture: rota modu (waypoint ekleme) veya marine profil modu
+            guard let parent = parent,
                   let mapView = gestureRecognizer.view as? MKMapView else {
+                return false
+            }
+
+            // Demir taslak modunda tap engelle (anchor pan gesture çakışır)
+            if parent.anchorAlarmState == .drafting {
                 return false
             }
 
             let point = gestureRecognizer.location(in: mapView)
 
+            // Annotation üzerindeyse MKMapView kendi seçim işlemini yapsın
             for annotation in mapView.annotations {
                 if let view = mapView.view(for: annotation) {
                     let pointInView = view.convert(point, from: mapView)
@@ -842,6 +849,7 @@ struct NauticalMapView: UIViewRepresentable {
                 }
             }
 
+            // Rota modunda waypoint ekleme, diğer durumlarda marine profil
             return true
         }
 
@@ -865,7 +873,14 @@ struct NauticalMapView: UIViewRepresentable {
                   let mapView = gesture.view as? MKMapView else { return }
 
             let coordinate = mapView.convert(gesture.location(in: mapView), toCoordinateFrom: mapView)
-            parent.onTapCoordinate?(coordinate)
+
+            if parent.isRouteMode {
+                // Rota modunda: waypoint ekle
+                parent.onTapCoordinate?(coordinate)
+            } else {
+                // Normal modda: marine profil göster
+                parent.onMarineTap?(coordinate)
+            }
         }
 
         // MARK: - Long Press (Araya Waypoint Ekleme)

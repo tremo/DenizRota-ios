@@ -3,6 +3,14 @@ import MapKit
 import SwiftData
 import Combine
 
+// MARK: - Marine Profile Target
+
+/// Sheet sunumu için Identifiable wrapper (CLLocationCoordinate2D Identifiable değil)
+struct MarineProfileTarget: Identifiable {
+    let id = UUID()
+    let coordinate: CLLocationCoordinate2D
+}
+
 struct MapView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var locationManager: LocationManager
@@ -55,6 +63,9 @@ struct MapView: View {
     // Demir alarmi
     @StateObject private var anchorAlarmManager = AnchorAlarmManager.shared
 
+    // Marine profil (OpenSeaMap deniz işaretleri)
+    @State private var marineProfileTarget: MarineProfileTarget?
+
     // Otomatik hava durumu guncelleme timer'i (15 dakika)
     private let weatherRefreshTimer = Timer.publish(
         every: AppConstants.weatherAutoRefreshInterval,
@@ -103,6 +114,9 @@ struct MapView: View {
                 },
                 onAnchorRadiusChanged: { newRadius in
                     anchorAlarmManager.updateRadius(newRadius)
+                },
+                onMarineTap: { coordinate in
+                    marineProfileTarget = MarineProfileTarget(coordinate: coordinate)
                 }
             )
             .ignoresSafeArea(edges: .top)
@@ -450,6 +464,15 @@ struct MapView: View {
             if let trip = completedTrip {
                 TripSummaryView(trip: trip)
             }
+        }
+        // Marine profil sheet (OpenSeaMap deniz işaretleri - haritaya tap ile açılır)
+        .sheet(item: $marineProfileTarget) { target in
+            MarineProfileView(
+                coordinate: target.coordinate,
+                onDismiss: { marineProfileTarget = nil }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.hidden)
         }
     }
 
