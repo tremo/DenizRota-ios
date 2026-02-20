@@ -46,9 +46,11 @@ struct MapView: View {
     @State private var windGridLoadTask: Task<Void, Never>?
     @State private var routeWeatherLoadTask: Task<Void, Never>?
 
-    // Seyir takip ekrani
-    @State private var showTripTracking = false
-    @State private var tripWaypoints: [Waypoint] = []
+    // Seyir takibi (ayni harita uzerinde)
+    @ObservedObject private var tripManager = TripManager.shared
+    @State private var showTripSummary = false
+    @State private var completedTrip: Trip?
+    @State private var isPaused = false
 
     // Demir alarmi
     @StateObject private var anchorAlarmManager = AnchorAlarmManager.shared
@@ -120,8 +122,8 @@ struct MapView: View {
                 // Ust bilgi paneli
                 HStack(alignment: .top) {
                     // Hiz paneli (seyir aktifken) - Sol ust
-                    if locationManager.isTracking {
-                        SpeedPanelView(speed: locationManager.currentSpeed)
+                    if tripManager.isActive {
+                        SpeedPanelView(speed: tripManager.currentSpeed)
                             .padding(.leading, 16)
                             .padding(.top, 8)
                     }
@@ -292,87 +294,96 @@ struct MapView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
-                // Alt butonlar
-                HStack(spacing: 16) {
-                    // Rota modu toggle
-                    Button {
-                        toggleRouteMode()
-                    } label: {
-                        Image(systemName: isRouteMode ? "point.topleft.down.to.point.bottomright.curvepath.fill" : "point.topleft.down.to.point.bottomright.curvepath")
-                            .font(.title2)
-                            .padding(12)
-                            .background(isRouteMode ? .blue : Color(.systemBackground))
-                            .foregroundStyle(isRouteMode ? .white : .blue)
-                            .clipShape(Circle())
-                            .shadow(radius: 4)
-                    }
-
-                    // Rota kaydet (sadece kaydedilmemis rotalar icin)
-                    if let route = activeRoute, !route.waypoints.isEmpty, route.name == "Yeni Rota" {
-                        Button {
-                            showingSaveRouteAlert = true
-                        } label: {
-                            Image(systemName: "square.and.arrow.down")
-                                .font(.title2)
-                                .padding(12)
-                                .background(Color(.systemBackground))
-                                .foregroundStyle(.green)
-                                .clipShape(Circle())
-                                .shadow(radius: 4)
-                        }
-                    }
-
-                    // Son waypoint'i sil (rota modunda)
-                    if isRouteMode, let route = activeRoute, !route.waypoints.isEmpty {
-                        Button {
-                            undoLastWaypoint()
-                        } label: {
-                            Image(systemName: "arrow.uturn.backward")
-                                .font(.title2)
-                                .padding(12)
-                                .background(Color(.systemBackground))
-                                .foregroundStyle(.red)
-                                .clipShape(Circle())
-                                .shadow(radius: 4)
-                        }
-                    }
-
-                    // Rotayi temizle/kapat
-                    if activeRoute != nil && !isRouteMode {
-                        Button {
-                            clearActiveRoute()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.title2)
-                                .padding(12)
-                                .background(Color(.systemBackground))
-                                .foregroundStyle(.gray)
-                                .clipShape(Circle())
-                                .shadow(radius: 4)
-                        }
-                    }
-
-                    Spacer()
-
-                    // Seyir baslat/bitir
-                    Button {
-                        if locationManager.isTracking {
-                            stopTrip()
-                        } else {
-                            startTrip()
-                        }
-                    } label: {
-                        Image(systemName: locationManager.isTracking ? "stop.fill" : "play.fill")
-                            .font(.title)
-                            .padding(16)
-                            .background(locationManager.isTracking ? .red : .green)
-                            .foregroundStyle(.white)
-                            .clipShape(Circle())
-                            .shadow(radius: 4)
-                    }
+                // Seyir takip paneli (aktif seyirde)
+                if tripManager.isActive {
+                    TripTrackingPanel(
+                        tripManager: tripManager,
+                        isPaused: $isPaused,
+                        onStop: { stopTrip() }
+                    )
+                    .padding(.horizontal, 16)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, showTimelineBar ? 8 : 30)
+
+                // Alt butonlar (seyir aktif degilken)
+                if !tripManager.isActive {
+                    HStack(spacing: 16) {
+                        // Rota modu toggle
+                        Button {
+                            toggleRouteMode()
+                        } label: {
+                            Image(systemName: isRouteMode ? "point.topleft.down.to.point.bottomright.curvepath.fill" : "point.topleft.down.to.point.bottomright.curvepath")
+                                .font(.title2)
+                                .padding(12)
+                                .background(isRouteMode ? .blue : Color(.systemBackground))
+                                .foregroundStyle(isRouteMode ? .white : .blue)
+                                .clipShape(Circle())
+                                .shadow(radius: 4)
+                        }
+
+                        // Rota kaydet (sadece kaydedilmemis rotalar icin)
+                        if let route = activeRoute, !route.waypoints.isEmpty, route.name == "Yeni Rota" {
+                            Button {
+                                showingSaveRouteAlert = true
+                            } label: {
+                                Image(systemName: "square.and.arrow.down")
+                                    .font(.title2)
+                                    .padding(12)
+                                    .background(Color(.systemBackground))
+                                    .foregroundStyle(.green)
+                                    .clipShape(Circle())
+                                    .shadow(radius: 4)
+                            }
+                        }
+
+                        // Son waypoint'i sil (rota modunda)
+                        if isRouteMode, let route = activeRoute, !route.waypoints.isEmpty {
+                            Button {
+                                undoLastWaypoint()
+                            } label: {
+                                Image(systemName: "arrow.uturn.backward")
+                                    .font(.title2)
+                                    .padding(12)
+                                    .background(Color(.systemBackground))
+                                    .foregroundStyle(.red)
+                                    .clipShape(Circle())
+                                    .shadow(radius: 4)
+                            }
+                        }
+
+                        // Rotayi temizle/kapat
+                        if activeRoute != nil && !isRouteMode {
+                            Button {
+                                clearActiveRoute()
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.title2)
+                                    .padding(12)
+                                    .background(Color(.systemBackground))
+                                    .foregroundStyle(.gray)
+                                    .clipShape(Circle())
+                                    .shadow(radius: 4)
+                            }
+                        }
+
+                        Spacer()
+
+                        // Seyir baslat
+                        Button {
+                            startTrip()
+                        } label: {
+                            Image(systemName: "play.fill")
+                                .font(.title)
+                                .padding(16)
+                                .background(.green)
+                                .foregroundStyle(.white)
+                                .clipShape(Circle())
+                                .shadow(radius: 4)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, showTimelineBar ? 8 : 30)
+                }
 
                 // Zaman cubugu (tab bar'in hemen ustunde)
                 if showTimelineBar {
@@ -389,6 +400,11 @@ struct MapView: View {
             // Konum izni uyarisi
             if !locationManager.hasAnyPermission {
                 PermissionOverlay()
+            }
+
+            // Hedefe varis overlay'i
+            if tripManager.hasArrived {
+                TripArrivalOverlay(onEndTrip: { stopTrip() })
             }
         }
         .alert("Rotayi Kaydet", isPresented: $showingSaveRouteAlert) {
@@ -419,13 +435,11 @@ struct MapView: View {
                 showRouteOnMap(route)
             }
         }
-        // Seyir takip tam ekrani
-        .fullScreenCover(isPresented: $showTripTracking) {
-            TripTrackingView(
-                waypoints: tripWaypoints,
-                boatSettings: boatSettingsList.first,
-                onTripEnd: { _ in }
-            )
+        // Seyir ozeti (tamamlaninca)
+        .sheet(isPresented: $showTripSummary) {
+            if let trip = completedTrip {
+                TripSummaryView(trip: trip)
+            }
         }
     }
 
@@ -684,30 +698,26 @@ struct MapView: View {
     // MARK: - Trip
 
     private func startTrip() {
-        tripWaypoints = activeRoute?.sortedWaypoints ?? []
-        showTripTracking = true
+        let waypoints = activeRoute?.sortedWaypoints ?? []
+        isPaused = false
+        tripManager.startTrip(waypoints: waypoints)
+
+        // Haritayi kullanici konumuna merkeze al
+        if let location = locationManager.currentLocation {
+            mapRegion = MKCoordinateRegion(
+                center: location.coordinate,
+                span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+            )
+        }
     }
 
     private func stopTrip() {
-        if let result = locationManager.stopTracking() {
-            // Trip kaydet
-            let trip = Trip(startDate: result.startTime)
-            trip.endDate = result.endTime
-            trip.maxSpeed = result.maxSpeed
-
-            // Pozisyonlari ekle
-            for location in result.positions {
-                let position = TripPosition(location: location)
-                trip.positions.append(position)
-            }
-
-            // Istatistikleri hesapla
-            trip.calculateStats(fuelRate: 20, fuelPrice: 45)
-
-            modelContext.insert(trip)
-
-            print("Trip saved: \(trip.distance) km, \(trip.positions.count) positions")
+        if let trip = tripManager.stopTrip() {
+            tripManager.saveTrip(trip, settings: boatSettingsList.first, context: modelContext)
+            completedTrip = trip
+            showTripSummary = true
         }
+        isPaused = false
     }
 
     // MARK: - Anchor Alarm
@@ -1112,6 +1122,174 @@ struct AnchorDraftControlsBar: View {
         .padding(14)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+// MARK: - Trip Tracking Panel (Inline Overlay)
+
+struct TripTrackingPanel: View {
+    @ObservedObject var tripManager: TripManager
+    @Binding var isPaused: Bool
+    let onStop: () -> Void
+
+    @AppStorage(UnitStorageKeys.boatSpeed) private var boatSpeedUnitRaw: String = SpeedUnit.kmh.rawValue
+    @AppStorage(UnitStorageKeys.distance) private var distanceUnitRaw: String = DistanceUnit.km.rawValue
+
+    private var speedUnit: SpeedUnit { SpeedUnit(rawValue: boatSpeedUnitRaw) ?? .kmh }
+    private var distUnit: DistanceUnit { DistanceUnit(rawValue: distanceUnitRaw) ?? .km }
+
+    @State private var showStopConfirmation = false
+
+    var body: some View {
+        VStack(spacing: 8) {
+            // Ust satir: sure, duraklat/devam, durdur
+            HStack(spacing: 12) {
+                // Sure
+                HStack(spacing: 4) {
+                    Image(systemName: "timer")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(tripManager.elapsedTime.formattedDuration)
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                }
+
+                Spacer()
+
+                // Sonraki waypoint
+                if tripManager.currentWaypointIndex < tripManager.targetWaypoints.count {
+                    let target = tripManager.targetWaypoints[tripManager.currentWaypointIndex]
+                    HStack(spacing: 4) {
+                        Image(systemName: "location.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.blue)
+                        Text(target.name ?? "Nokta \(tripManager.currentWaypointIndex + 1)")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                        if let distance = tripManager.distanceToNextWaypoint {
+                            Text("\(Int(distance))m")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text("\(tripManager.currentWaypointIndex + 1)/\(tripManager.targetWaypoints.count)")
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(.blue.opacity(0.15))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+
+                Spacer()
+
+                // Duraklat/Devam
+                Button {
+                    isPaused.toggle()
+                    if isPaused {
+                        tripManager.pauseTrip()
+                    } else {
+                        tripManager.resumeTrip()
+                    }
+                } label: {
+                    Image(systemName: isPaused ? "play.fill" : "pause.fill")
+                        .font(.body.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(isPaused ? .green : .orange)
+                        .clipShape(Circle())
+                }
+
+                // Durdur
+                Button {
+                    showStopConfirmation = true
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.body.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(.red)
+                        .clipShape(Circle())
+                }
+            }
+
+            Divider()
+
+            // Alt satir: istatistikler
+            HStack(spacing: 0) {
+                tripStat(
+                    value: distUnit.format(tripManager.totalDistance),
+                    label: "Mesafe"
+                )
+                Divider().frame(height: 24)
+                tripStat(
+                    value: speedUnit.format(tripManager.maxSpeed),
+                    label: "Maks"
+                )
+                Divider().frame(height: 24)
+
+                let avgSpeed = tripManager.totalDistance > 0 && tripManager.elapsedTime > 0
+                    ? tripManager.totalDistance / (tripManager.elapsedTime / 3600) : 0.0
+                tripStat(
+                    value: speedUnit.format(avgSpeed),
+                    label: "Ort"
+                )
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(radius: 4)
+        .alert("Seyiri Bitir", isPresented: $showStopConfirmation) {
+            Button("Iptal", role: .cancel) { }
+            Button("Bitir", role: .destructive) {
+                onStop()
+            }
+        } message: {
+            Text("Seyiri bitirmek istediginize emin misiniz?")
+        }
+    }
+
+    private func tripStat(value: String, label: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Trip Arrival Overlay
+
+struct TripArrivalOverlay: View {
+    let onEndTrip: () -> Void
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 80))
+                .foregroundStyle(.green)
+
+            Text("Hedefe Ulasildi!")
+                .font(.title)
+                .fontWeight(.bold)
+
+            Button("Seyiri Bitir") {
+                onEndTrip()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+        .padding(40)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .shadow(radius: 20)
     }
 }
 
