@@ -569,6 +569,45 @@ struct WaveLegendView: View {
     }
 }
 
+// MARK: - Depth Legend View
+/// EMODnet batimetri renk skalasi lejanti (mean_multicolour katmani ile eslesmis renkler)
+struct DepthLegendView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Derinlik (m)")
+                .font(.caption2)
+                .fontWeight(.semibold)
+
+            ForEach(depthLevels, id: \.label) { level in
+                HStack(spacing: 4) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(level.color)
+                        .frame(width: 14, height: 8)
+                    Text(level.label)
+                        .font(.system(size: 9))
+                }
+            }
+        }
+        .padding(8)
+        .background(.ultraThinMaterial)
+        .cornerRadius(8)
+    }
+
+    /// EMODnet mean_multicolour WMS katmaninin renk skalasini yaklasik olarak yansitir.
+    /// Acik mavi (sığ) → koyu lacivert (derin).
+    private var depthLevels: [(label: String, color: Color)] {
+        [
+            ("0–10",    Color(red: 0.78, green: 0.93, blue: 1.00)),
+            ("10–50",   Color(red: 0.53, green: 0.81, blue: 0.98)),
+            ("50–200",  Color(red: 0.27, green: 0.65, blue: 0.91)),
+            ("200–500", Color(red: 0.13, green: 0.45, blue: 0.80)),
+            ("500–1k",  Color(red: 0.07, green: 0.28, blue: 0.62)),
+            ("1k–2k",   Color(red: 0.04, green: 0.16, blue: 0.43)),
+            ("2k+",     Color(red: 0.02, green: 0.07, blue: 0.25))
+        ]
+    }
+}
+
 // MARK: - Weather Grid Loader
 class WeatherGridLoader {
     static let shared = WeatherGridLoader()

@@ -268,6 +268,16 @@ struct MapView: View {
                     }
                 }
 
+                // Derinlik haritasi lejanti (sol alt)
+                if showDepthMap {
+                    HStack {
+                        DepthLegendView()
+                            .padding(.leading, 16)
+                            .transition(.opacity)
+                        Spacer()
+                    }
+                }
+
                 // Demir alarmi aktif durum bilgisi
                 if anchorAlarmManager.state == .active {
                     AnchorActiveInfoBar(
