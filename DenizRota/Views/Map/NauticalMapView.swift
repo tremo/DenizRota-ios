@@ -784,7 +784,6 @@ struct NauticalMapView: UIViewRepresentable {
             // Anchor pan gesture: sadece anchor/handle uzerindeyse basla
             if gestureRecognizer === anchorPanGesture {
                 guard let mapView = gestureRecognizer.view as? MKMapView else { return false }
-                let point = gestureRecognizer.location(in: mapView)
 
                 // Handle uzerinde mi?
                 if let handleAnnotation = mapView.annotations.first(where: { $0 is AnchorRadiusHandleAnnotation }),
