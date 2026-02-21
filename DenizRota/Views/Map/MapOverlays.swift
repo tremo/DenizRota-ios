@@ -593,18 +593,17 @@ struct DepthLegendView: View {
         .cornerRadius(8)
     }
 
-    /// EMODnet mean_multicolour WMS katmaninin renk skalasini yaklasik olarak yansitir.
-    /// Açık turkuaz (sığ) → canlı mavi → koyu lacivert (derin).
-    /// GEBCO/ETOPO standart batimetri paleti referans alınmıştır.
+    /// EMODnet mean_multicolour WMS katmaninin rainbow renk skalasi.
+    /// Kirmizi (siglik) → sari → yesil → cyan → mavi → koyu lacivert (derin).
     private var depthLevels: [(label: String, color: Color)] {
         [
-            ("0–10",    Color(red: 0.62, green: 0.90, blue: 0.96)),   // #9EE5F5 açık turkuaz
-            ("10–50",   Color(red: 0.35, green: 0.76, blue: 0.92)),   // #59C2EB cyan-mavi
-            ("50–200",  Color(red: 0.13, green: 0.58, blue: 0.84)),   // #2194D6 orta mavi
-            ("200–500", Color(red: 0.06, green: 0.44, blue: 0.73)),   // #1071BA okyanus mavisi
-            ("500–1k",  Color(red: 0.03, green: 0.29, blue: 0.57)),   // #084A92 koyu mavi
-            ("1k–2k",   Color(red: 0.02, green: 0.17, blue: 0.40)),   // #052B66 lacivert
-            ("2k+",     Color(red: 0.01, green: 0.07, blue: 0.25))    // #031240 koyu lacivert
+            ("0–10",    Color(red: 1.00, green: 0.08, blue: 0.05)),   // parlak kirmizi
+            ("10–50",   Color(red: 1.00, green: 0.88, blue: 0.00)),   // sari
+            ("50–200",  Color(red: 0.40, green: 0.85, blue: 0.10)),   // yesil
+            ("200–500", Color(red: 0.00, green: 0.82, blue: 0.72)),   // cyan-turkuaz
+            ("500–1k",  Color(red: 0.00, green: 0.35, blue: 0.85)),   // mavi
+            ("1k–2k",   Color(red: 0.00, green: 0.10, blue: 0.55)),   // koyu mavi
+            ("2k+",     Color(red: 0.00, green: 0.04, blue: 0.28))    // lacivert
         ]
     }
 }
