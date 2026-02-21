@@ -593,17 +593,17 @@ struct DepthLegendView: View {
         .cornerRadius(8)
     }
 
-    /// EMODnet mean_multicolour WMS katmaninin renk skalasini yaklasik olarak yansitir.
-    /// Acik mavi (sığ) → koyu lacivert (derin).
+    /// EMODnet mean_multicolour WMS katmaninin rainbow renk skalasi.
+    /// Kirmizi (siglik) → sari → yesil → cyan → mavi → koyu lacivert (derin).
     private var depthLevels: [(label: String, color: Color)] {
         [
-            ("0–10",    Color(red: 0.78, green: 0.93, blue: 1.00)),
-            ("10–50",   Color(red: 0.53, green: 0.81, blue: 0.98)),
-            ("50–200",  Color(red: 0.27, green: 0.65, blue: 0.91)),
-            ("200–500", Color(red: 0.13, green: 0.45, blue: 0.80)),
-            ("500–1k",  Color(red: 0.07, green: 0.28, blue: 0.62)),
-            ("1k–2k",   Color(red: 0.04, green: 0.16, blue: 0.43)),
-            ("2k+",     Color(red: 0.02, green: 0.07, blue: 0.25))
+            ("0–10",    Color(red: 1.00, green: 0.08, blue: 0.05)),   // parlak kirmizi
+            ("10–50",   Color(red: 1.00, green: 0.88, blue: 0.00)),   // sari
+            ("50–200",  Color(red: 0.40, green: 0.85, blue: 0.10)),   // yesil
+            ("200–500", Color(red: 0.00, green: 0.82, blue: 0.72)),   // cyan-turkuaz
+            ("500–1k",  Color(red: 0.00, green: 0.35, blue: 0.85)),   // mavi
+            ("1k–2k",   Color(red: 0.00, green: 0.10, blue: 0.55)),   // koyu mavi
+            ("2k+",     Color(red: 0.00, green: 0.04, blue: 0.28))    // lacivert
         ]
     }
 }
