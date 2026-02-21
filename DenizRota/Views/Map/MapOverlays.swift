@@ -594,16 +594,17 @@ struct DepthLegendView: View {
     }
 
     /// EMODnet mean_multicolour WMS katmaninin renk skalasini yaklasik olarak yansitir.
-    /// Acik mavi (sığ) → koyu lacivert (derin).
+    /// Açık turkuaz (sığ) → canlı mavi → koyu lacivert (derin).
+    /// GEBCO/ETOPO standart batimetri paleti referans alınmıştır.
     private var depthLevels: [(label: String, color: Color)] {
         [
-            ("0–10",    Color(red: 0.78, green: 0.93, blue: 1.00)),
-            ("10–50",   Color(red: 0.53, green: 0.81, blue: 0.98)),
-            ("50–200",  Color(red: 0.27, green: 0.65, blue: 0.91)),
-            ("200–500", Color(red: 0.13, green: 0.45, blue: 0.80)),
-            ("500–1k",  Color(red: 0.07, green: 0.28, blue: 0.62)),
-            ("1k–2k",   Color(red: 0.04, green: 0.16, blue: 0.43)),
-            ("2k+",     Color(red: 0.02, green: 0.07, blue: 0.25))
+            ("0–10",    Color(red: 0.62, green: 0.90, blue: 0.96)),   // #9EE5F5 açık turkuaz
+            ("10–50",   Color(red: 0.35, green: 0.76, blue: 0.92)),   // #59C2EB cyan-mavi
+            ("50–200",  Color(red: 0.13, green: 0.58, blue: 0.84)),   // #2194D6 orta mavi
+            ("200–500", Color(red: 0.06, green: 0.44, blue: 0.73)),   // #1071BA okyanus mavisi
+            ("500–1k",  Color(red: 0.03, green: 0.29, blue: 0.57)),   // #084A92 koyu mavi
+            ("1k–2k",   Color(red: 0.02, green: 0.17, blue: 0.40)),   // #052B66 lacivert
+            ("2k+",     Color(red: 0.01, green: 0.07, blue: 0.25))    // #031240 koyu lacivert
         ]
     }
 }
