@@ -38,7 +38,7 @@ actor WeatherService {
         return data
     }
 
-    func fetchWeather(for coordinate: CLLocationCoordinate2D, date: Date = Date()) async throws -> WeatherData {
+    func fetchWeather(for coordinate: CLLocationCoordinate2D, date: Date = Date(), coastlinePoints: [(lng: Double, lat: Double)]? = nil) async throws -> WeatherData {
         let cacheKey = cacheKey(for: coordinate, date: date)
 
         // Cache kontrolü
@@ -71,7 +71,8 @@ actor WeatherService {
             fetchDistance = FetchCalculator.shared.calculateFetch(
                 lat: coordinate.latitude,
                 lng: coordinate.longitude,
-                windDirection: weatherValues.windDirection
+                windDirection: weatherValues.windDirection,
+                coastlinePoints: coastlinePoints
             )
 
             let swellHeight = marineValues?.swellWaveHeight ?? 0
