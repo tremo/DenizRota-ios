@@ -20,7 +20,8 @@ final class FetchCalculator {
     // MARK: - Public API
 
     /// Belirtilen noktadan rüzgar yönünde kıyıya olan mesafeyi hesaplar
-    func calculateFetch(lat: Double, lng: Double, windDirection: Double) -> Double {
+    /// coastlinePoints: Online cekilmis kiyi noktalari (nil ise statik CoastlineData kullanilir)
+    func calculateFetch(lat: Double, lng: Double, windDirection: Double, coastlinePoints: [(lng: Double, lat: Double)]? = nil) -> Double {
         // Rüzgarın geldiği yöne doğru ilerle (180° ters)
         let checkDirection = (windDirection + 180).truncatingRemainder(dividingBy: 360)
         let directionRad = checkDirection * .pi / 180
@@ -42,7 +43,7 @@ final class FetchCalculator {
             currentLng += lngStep
             distance += stepKm
 
-            if isPointOnLand(lat: currentLat, lng: currentLng) {
+            if isPointOnLand(lat: currentLat, lng: currentLng, coastlinePoints: coastlinePoints) {
                 return distance
             }
         }
@@ -69,11 +70,11 @@ final class FetchCalculator {
     }
 
     /// Kara kontrolü - SeaAreas ve CoastlineData kullanarak
-    private func isPointOnLand(lat: Double, lng: Double) -> Bool {
+    private func isPointOnLand(lat: Double, lng: Double, coastlinePoints: [(lng: Double, lat: Double)]? = nil) -> Bool {
         // SeaAreas.isInSea() ile deniz alanı kontrolü (kod tekrarını önler)
         if SeaAreas.isInSea(lat: lat, lng: lng) {
             // Deniz alanı içinde ama kıyı şeridinde olabilir
-            return isNearCoastline(lat: lat, lng: lng)
+            return isNearCoastline(lat: lat, lng: lng, coastlinePoints: coastlinePoints)
         }
 
         // Deniz alanı dışında - Türkiye sınırları içindeyse kara
@@ -90,11 +91,13 @@ final class FetchCalculator {
         return true
     }
 
-    /// Kıyı şeridine yakınlık kontrolü - CoastlineData'daki detaylı noktaları kullanır
-    private func isNearCoastline(lat: Double, lng: Double) -> Bool {
+    /// Kıyı şeridine yakınlık kontrolü
+    /// Online coastlinePoints varsa onlari kullanir, yoksa statik CoastlineData'ya duser
+    private func isNearCoastline(lat: Double, lng: Double, coastlinePoints: [(lng: Double, lat: Double)]? = nil) -> Bool {
+        let points = coastlinePoints ?? CoastlineData.allPoints
         let threshold = 0.015 // ~1.5 km
 
-        for point in CoastlineData.allPoints {
+        for point in points {
             let distance = sqrt(pow(lat - point.lat, 2) + pow(lng - point.lng, 2))
             if distance < threshold {
                 return true

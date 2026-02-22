@@ -46,6 +46,12 @@ struct MapView: View {
     @State private var windGridLoadTask: Task<Void, Never>?
     @State private var routeWeatherLoadTask: Task<Void, Never>?
 
+    // Kiyi cizgisi debug overlay
+    @State private var showCoastlineDebug = false
+    @State private var coastlinePolylines: [[CLLocationCoordinate2D]] = []
+    @State private var coastlinePoints: [(lng: Double, lat: Double)] = []
+    @State private var isLoadingCoastline = false
+
     // Seyir takibi (ayni harita uzerinde)
     @ObservedObject private var tripManager = TripManager.shared
     @State private var showTripSummary = false
@@ -79,6 +85,8 @@ struct MapView: View {
                 isAlarmTriggered: anchorAlarmManager.isAlarmTriggered,
                 showWindOverlay: showWindOverlay,
                 windData: windGridData,
+                showCoastlineDebug: showCoastlineDebug,
+                coastlinePolylines: coastlinePolylines,
                 onTapCoordinate: { coordinate in
                     addWaypoint(at: coordinate)
                 },
@@ -213,6 +221,26 @@ struct MapView: View {
                             .foregroundStyle(locationManager.currentLocation != nil ? .blue : .secondary)
                             .clipShape(Circle())
                             .shadow(radius: 2)
+                    }
+
+                    // Kiyi cizgisi debug butonu - Sag ust
+                    Button {
+                        toggleCoastlineDebug()
+                    } label: {
+                        Image(systemName: "map.circle")
+                            .font(.title3)
+                            .padding(10)
+                            .background(showCoastlineDebug ? AnyShapeStyle(Color.red) : AnyShapeStyle(.ultraThinMaterial))
+                            .foregroundStyle(showCoastlineDebug ? .white : .primary)
+                            .clipShape(Circle())
+                            .shadow(radius: 2)
+                            .overlay {
+                                if isLoadingCoastline {
+                                    ProgressView()
+                                        .scaleEffect(0.6)
+                                        .tint(showCoastlineDebug ? .white : .red)
+                                }
+                            }
                     }
 
                     // Demir alarmi butonu - Sag ust
@@ -615,11 +643,12 @@ struct MapView: View {
     /// Tek bir waypoint icin hava durumu yukle (ekleme/tasima sonrasi)
     private func loadWeatherForWaypoint(_ waypoint: Waypoint) async {
         let forecastDate = selectedForecastDate
+        let currentCoastline = coastlinePoints.isEmpty ? nil : coastlinePoints
 
         waypoint.isLoading = true
 
         do {
-            let weather = try await WeatherService.shared.fetchWeather(for: waypoint.coordinate, date: forecastDate)
+            let weather = try await WeatherService.shared.fetchWeather(for: waypoint.coordinate, date: forecastDate, coastlinePoints: currentCoastline)
 
             guard !Task.isCancelled else {
                 waypoint.isLoading = false
@@ -656,13 +685,30 @@ struct MapView: View {
             waypoint.isLoading = true
         }
 
+        // Rota bolgesinin kiyi cizgisini online cek (FetchCalculator icin)
+        let routeCoastline: [(lng: Double, lat: Double)]?
+        do {
+            let waypoints = route.waypoints.map { (lat: $0.latitude, lng: $0.longitude) }
+            let result = try await CoastlineService.shared.fetchCoastlineForRoute(waypoints: waypoints)
+            routeCoastline = result.coastlinePoints.isEmpty ? nil : result.coastlinePoints
+            // Debug gorunumu aktifse haritadaki kiyi cizgisini de guncelle
+            if showCoastlineDebug {
+                await MainActor.run {
+                    coastlinePolylines = result.coordinatePolylines
+                    coastlinePoints = result.coastlinePoints
+                }
+            }
+        } catch {
+            routeCoastline = coastlinePoints.isEmpty ? nil : coastlinePoints
+        }
+
         // Her waypoint icin hava durumu (secilen tarihe gore)
         for waypoint in route.waypoints {
             // Iptal edildiyse erken cik (race condition onlemi)
             guard !Task.isCancelled else { break }
 
             do {
-                let weather = try await WeatherService.shared.fetchWeather(for: waypoint.coordinate, date: forecastDate)
+                let weather = try await WeatherService.shared.fetchWeather(for: waypoint.coordinate, date: forecastDate, coastlinePoints: routeCoastline)
 
                 // Iptal edildiyse sonucu yazma (eski veri ustune yazmayı onle)
                 guard !Task.isCancelled else { break }
@@ -776,6 +822,35 @@ struct MapView: View {
                 anchorAlarmManager.deactivateAlarm()
             }
             locationManager.stopLocationUpdatesIfNeeded()
+        }
+    }
+
+    // MARK: - Coastline Debug
+
+    private func toggleCoastlineDebug() {
+        showCoastlineDebug.toggle()
+        if showCoastlineDebug {
+            Task { await loadCoastline(for: currentMapRegion) }
+        } else {
+            coastlinePolylines = []
+            coastlinePoints = []
+        }
+    }
+
+    private func loadCoastline(for region: MKCoordinateRegion) async {
+        isLoadingCoastline = true
+        do {
+            let result = try await CoastlineService.shared.fetchCoastline(for: region)
+            await MainActor.run {
+                coastlinePolylines = result.coordinatePolylines
+                coastlinePoints = result.coastlinePoints
+                isLoadingCoastline = false
+            }
+        } catch {
+            await MainActor.run {
+                isLoadingCoastline = false
+            }
+            print("Coastline fetch hatasi: \(error)")
         }
     }
 

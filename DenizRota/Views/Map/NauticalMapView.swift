@@ -82,6 +82,10 @@ class AnchorRadiusLabelAnnotation: NSObject, MKAnnotation {
     }
 }
 
+// MARK: - Coastline Debug Overlay
+
+class CoastlinePolyline: MKPolyline {}
+
 // MARK: - Anchor Circle Overlay
 
 class AnchorCircleOverlay: MKCircle {}
@@ -145,6 +149,10 @@ struct NauticalMapView: UIViewRepresentable {
     // Ruzgar partikul overlay
     var showWindOverlay: Bool = false
     var windData: [WindGridPoint] = []
+
+    // Kiyi cizgisi debug overlay
+    var showCoastlineDebug: Bool = false
+    var coastlinePolylines: [[CLLocationCoordinate2D]] = []
 
     var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
     var onDeleteWaypoint: ((Waypoint) -> Void)?
@@ -235,6 +243,7 @@ struct NauticalMapView: UIViewRepresentable {
         }
         updateAnchorOverlay(mapView, context: context)
         updateWindOverlay(context: context)
+        updateCoastlineOverlay(mapView)
     }
 
     // MARK: - Depth Map
@@ -509,6 +518,25 @@ struct NauticalMapView: UIViewRepresentable {
             particleView.startAnimation()
         } else if !showWindOverlay && particleView.isAnimating {
             particleView.stopAnimation()
+        }
+    }
+
+    // MARK: - Coastline Debug Overlay
+
+    private func updateCoastlineOverlay(_ mapView: MKMapView) {
+        // Mevcut coastline polyline'larini kaldir
+        let existingCoastlines = mapView.overlays.compactMap { $0 as? CoastlinePolyline }
+        for overlay in existingCoastlines {
+            mapView.removeOverlay(overlay)
+        }
+
+        guard showCoastlineDebug, !coastlinePolylines.isEmpty else { return }
+
+        // Her polyline segmentini haritaya ekle
+        for var coords in coastlinePolylines {
+            guard coords.count > 1 else { continue }
+            let polyline = CoastlinePolyline(coordinates: &coords, count: coords.count)
+            mapView.addOverlay(polyline, level: .aboveLabels)
         }
     }
 
@@ -996,6 +1024,13 @@ struct NauticalMapView: UIViewRepresentable {
                     : UIColor.systemBlue.withAlphaComponent(0.08)
                 renderer.lineWidth = isActive ? 3 : 2
                 renderer.lineDashPattern = isActive ? nil : [8, 6]
+                return renderer
+            }
+
+            if let coastline = overlay as? CoastlinePolyline {
+                let renderer = MKPolylineRenderer(polyline: coastline)
+                renderer.strokeColor = .systemRed
+                renderer.lineWidth = 3
                 return renderer
             }
 
