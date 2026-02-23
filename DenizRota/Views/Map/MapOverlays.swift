@@ -570,7 +570,8 @@ struct WaveLegendView: View {
 }
 
 // MARK: - Depth Legend View
-/// EMODnet batimetri renk skalasi lejanti (mean_multicolour katmani ile eslesmis renkler)
+/// EMODnet mean_multicolour WMS katmaninin kesin renk skalasi.
+/// Renkler GetLegendGraphic PNG uzerinden kullanici tarafindan olculdu.
 struct DepthLegendView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -593,17 +594,17 @@ struct DepthLegendView: View {
         .cornerRadius(8)
     }
 
-    /// EMODnet mean_multicolour WMS katmaninin rainbow renk skalasi.
-    /// Kirmizi (siglik) → sari → yesil → cyan → mavi → koyu lacivert (derin).
     private var depthLevels: [(label: String, color: Color)] {
         [
-            ("0–10",    Color(red: 1.00, green: 0.08, blue: 0.05)),   // parlak kirmizi
-            ("10–50",   Color(red: 1.00, green: 0.88, blue: 0.00)),   // sari
-            ("50–200",  Color(red: 0.40, green: 0.85, blue: 0.10)),   // yesil
-            ("200–500", Color(red: 0.00, green: 0.82, blue: 0.72)),   // cyan-turkuaz
-            ("500–1k",  Color(red: 0.00, green: 0.35, blue: 0.85)),   // mavi
-            ("1k–2k",   Color(red: 0.00, green: 0.10, blue: 0.55)),   // koyu mavi
-            ("2k+",     Color(red: 0.00, green: 0.04, blue: 0.28))    // lacivert
+            ("0–10",    Color(red: 1.00, green: 0.00, blue: 0.00)),  // #FF0000 saf kirmizi
+            ("10–50",   Color(red: 1.00, green: 0.29, blue: 0.00)),  // #FF4900 parlak turuncu
+            ("50–150",  Color(red: 0.98, green: 0.96, blue: 0.03)),  // #F9F507 canli sari
+            ("150–450", Color(red: 0.44, green: 0.88, blue: 0.27)),  // #71E044 lime yesil
+            ("450–1k",  Color(red: 0.06, green: 0.93, blue: 0.74)),  // #10ECBC turkuaz
+            ("1k–2k",   Color(red: 0.03, green: 0.76, blue: 0.88)),  // #08C3E1 parlak mavi
+            ("2k–3.5k", Color(red: 0.03, green: 0.29, blue: 0.93)), // #084BED derin mavi
+            ("3.5k–6k", Color(red: 0.02, green: 0.03, blue: 0.70)), // #0408B2 koyu lacivert
+            ("6k+",     Color(red: 0.00, green: 0.00, blue: 0.24))   // #00003E siyaha yakin
         ]
     }
 }
